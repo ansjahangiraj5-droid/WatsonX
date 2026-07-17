@@ -5,6 +5,7 @@ const allowedExcelTypes = new Set([
   'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   'application/vnd.ms-excel'
 ]);
+const allOption = 'All';
 
 function normalizeKey(value) {
   return String(value ?? '')
@@ -30,6 +31,12 @@ function findHeaderIndex(headers, aliases) {
   return headers.findIndex((header) => aliases.includes(normalizeKey(header)));
 }
 
+function buildBreakdown(items, keyName, valueName) {
+  return Object.entries(items)
+    .map(([key, total]) => ({ [keyName]: key, [valueName]: total }))
+    .sort((left, right) => right[valueName] - left[valueName]);
+}
+
 function App() {
   const fileInputRef = useRef(null);
   const [fileName, setFileName] = useState('');
@@ -37,14 +44,18 @@ function App() {
   const [rows, setRows] = useState([]);
   const [sheetName, setSheetName] = useState('');
   const [error, setError] = useState('');
-  const [selectedUser, setSelectedUser] = useState('All Users');
+  const [selectedAssignmentGroup, setSelectedAssignmentGroup] = useState(allOption);
+  const [selectedAssignee, setSelectedAssignee] = useState(allOption);
+  const [selectedBreachStatus, setSelectedBreachStatus] = useState(allOption);
 
   const resetData = (message = '', nextFileName = '') => {
     setFileName(nextFileName);
     setHeaders([]);
     setRows([]);
     setSheetName('');
-    setSelectedUser('All Users');
+    setSelectedAssignmentGroup(allOption);
+    setSelectedAssignee(allOption);
+    setSelectedBreachStatus(allOption);
     setError(message);
   };
 
@@ -61,20 +72,43 @@ function App() {
       return null;
     }
 
-    const incidentIndex = findHeaderIndex(headers, ['incident number', 'incident', 'ticket number', 'ticket', 'incident id']);
-    const daysIndex = findHeaderIndex(headers, ['no of days from ticket raised', 'days from ticket raised', 'days open', 'ageing days', 'aging days', 'days']);
-    const userIndex = findHeaderIndex(headers, ['users name assigned to', 'assigned to', 'assignee', 'user name', 'assigned user']);
-    const priorityIndex = findHeaderIndex(headers, ['priority level', 'priority', 'severity']);
+    const numberIndex = findHeaderIndex(headers, ['number']);
+    const assignmentGroupIndex = findHeaderIndex(headers, ['assignment group']);
+    const assignedToIndex = findHeaderIndex(headers, ['assigned to']);
+    const priorityIndex = findHeaderIndex(headers, ['priority']);
+    const createdIndex = findHeaderIndex(headers, ['created']);
+    const breachedIndex = findHeaderIndex(headers, ['has breached']);
+    const categoryIndex = findHeaderIndex(headers, ['category']);
+    const slaIndex = findHeaderIndex(headers, ['sla definition']);
+    const stageIndex = findHeaderIndex(headers, ['stage']);
+    const resolvedIndex = findHeaderIndex(headers, ['resolved']);
 
-    if ([incidentIndex, daysIndex, userIndex, priorityIndex].some((index) => index === -1)) {
+    if ([
+      numberIndex,
+      assignmentGroupIndex,
+      assignedToIndex,
+      priorityIndex,
+      createdIndex,
+      breachedIndex,
+      categoryIndex,
+      slaIndex,
+      stageIndex,
+      resolvedIndex
+    ].some((index) => index === -1)) {
       return null;
     }
 
     return {
-      incidentIndex,
-      daysIndex,
-      userIndex,
-      priorityIndex
+      numberIndex,
+      assignmentGroupIndex,
+      assignedToIndex,
+      priorityIndex,
+      createdIndex,
+      breachedIndex,
+      categoryIndex,
+      slaIndex,
+      stageIndex,
+      resolvedIndex
     };
   }, [headers]);
 
@@ -84,95 +118,107 @@ function App() {
     }
 
     return rows.map((row, index) => {
-      const incidentNumber = getCellValue(row[incidentConfig.incidentIndex]);
-      const assignedTo = getCellValue(row[incidentConfig.userIndex]);
-      const priority = getCellValue(row[incidentConfig.priorityIndex]);
-      const daysRaw = row[incidentConfig.daysIndex];
-      const daysOpen = Number(daysRaw);
+      const createdRaw = row[incidentConfig.createdIndex];
+      const createdDate = createdRaw instanceof Date ? createdRaw : new Date(createdRaw);
 
       return {
-        id: `${incidentNumber}-${index}`,
-        incidentNumber,
-        assignedTo,
-        priority,
-        daysOpen: Number.isFinite(daysOpen) ? daysOpen : 0,
+        id: `${getCellValue(row[incidentConfig.numberIndex])}-${index}`,
+        number: getCellValue(row[incidentConfig.numberIndex]),
+        assignmentGroup: getCellValue(row[incidentConfig.assignmentGroupIndex]),
+        assignedTo: getCellValue(row[incidentConfig.assignedToIndex]),
+        priority: getCellValue(row[incidentConfig.priorityIndex]),
+        created: getCellValue(row[incidentConfig.createdIndex]),
+        createdDate: Number.isNaN(createdDate.getTime()) ? null : createdDate,
+        hasBreached: getCellValue(row[incidentConfig.breachedIndex]),
+        category: getCellValue(row[incidentConfig.categoryIndex]),
+        slaDefinition: getCellValue(row[incidentConfig.slaIndex]),
+        stage: getCellValue(row[incidentConfig.stageIndex]),
+        resolved: getCellValue(row[incidentConfig.resolvedIndex]),
         originalRow: row
       };
     });
   }, [incidentConfig, rows]);
 
-  const users = useMemo(() => {
-    const names = Array.from(new Set(incidents.map((item) => item.assignedTo).filter((name) => name !== '-')));
-    return ['All Users', ...names];
+  const assignmentGroups = useMemo(() => {
+    return [allOption, ...Array.from(new Set(incidents.map((item) => item.assignmentGroup).filter((item) => item !== '-'))).sort()];
+  }, [incidents]);
+
+  const assignees = useMemo(() => {
+    return [allOption, ...Array.from(new Set(incidents.map((item) => item.assignedTo).filter((item) => item !== '-'))).sort()];
+  }, [incidents]);
+
+  const breachStatuses = useMemo(() => {
+    return [allOption, ...Array.from(new Set(incidents.map((item) => item.hasBreached).filter((item) => item !== '-'))).sort()];
   }, [incidents]);
 
   const filteredIncidents = useMemo(() => {
-    if (selectedUser === 'All Users') {
-      return incidents;
-    }
+    return incidents.filter((incident) => {
+      const matchesAssignmentGroup = selectedAssignmentGroup === allOption || incident.assignmentGroup === selectedAssignmentGroup;
+      const matchesAssignee = selectedAssignee === allOption || incident.assignedTo === selectedAssignee;
+      const matchesBreachStatus = selectedBreachStatus === allOption || incident.hasBreached === selectedBreachStatus;
 
-    return incidents.filter((incident) => incident.assignedTo === selectedUser);
-  }, [incidents, selectedUser]);
+      return matchesAssignmentGroup && matchesAssignee && matchesBreachStatus;
+    });
+  }, [incidents, selectedAssignmentGroup, selectedAssignee, selectedBreachStatus]);
 
   const metrics = useMemo(() => {
-    const overdue = filteredIncidents.filter((incident) => incident.daysOpen > 30).length;
-    const critical = filteredIncidents.filter((incident) => /p1|critical|high/i.test(incident.priority)).length;
-    const averageAge = filteredIncidents.length > 0
-      ? filteredIncidents.reduce((sum, incident) => sum + incident.daysOpen, 0) / filteredIncidents.length
-      : 0;
+    const breachedCount = filteredIncidents.filter((incident) => /true|yes|breached/i.test(incident.hasBreached)).length;
+    const unassignedCount = filteredIncidents.filter((incident) => incident.assignedTo === '-').length;
+    const uniqueGroups = new Set(filteredIncidents.map((incident) => incident.assignmentGroup).filter((item) => item !== '-')).size;
 
     return {
       totalIncidents: filteredIncidents.length,
-      overdue,
-      critical,
-      averageAge: averageAge.toFixed(1)
+      breachedCount,
+      uniqueGroups,
+      unassignedCount
     };
   }, [filteredIncidents]);
 
-  const priorityBreakdown = useMemo(() => {
+  const assignmentGroupBreakdown = useMemo(() => {
     const grouped = filteredIncidents.reduce((accumulator, incident) => {
-      accumulator[incident.priority] = (accumulator[incident.priority] || 0) + 1;
+      accumulator[incident.assignmentGroup] = (accumulator[incident.assignmentGroup] || 0) + 1;
       return accumulator;
     }, {});
 
-    return Object.entries(grouped).map(([priority, total]) => ({ priority, total }));
+    return buildBreakdown(grouped, 'assignmentGroup', 'total').slice(0, 8);
   }, [filteredIncidents]);
 
-  const ageBuckets = useMemo(() => {
-    const buckets = [
-      { label: '0-7 days', min: 0, max: 7, total: 0 },
-      { label: '8-15 days', min: 8, max: 15, total: 0 },
-      { label: '16-30 days', min: 16, max: 30, total: 0 },
-      { label: '31-60 days', min: 31, max: 60, total: 0 },
-      { label: '60+ days', min: 61, max: Number.POSITIVE_INFINITY, total: 0 }
-    ];
-
-    filteredIncidents.forEach((incident) => {
-      const bucket = buckets.find((item) => incident.daysOpen >= item.min && incident.daysOpen <= item.max);
-      if (bucket) {
-        bucket.total += 1;
-      }
-    });
-
-    return buckets;
-  }, [filteredIncidents]);
-
-  const topUsers = useMemo(() => {
-    const grouped = incidents.reduce((accumulator, incident) => {
+  const assigneeBreakdown = useMemo(() => {
+    const grouped = filteredIncidents.reduce((accumulator, incident) => {
       accumulator[incident.assignedTo] = (accumulator[incident.assignedTo] || 0) + 1;
       return accumulator;
     }, {});
 
-    return Object.entries(grouped)
-      .filter(([name]) => name !== '-')
-      .map(([name, total]) => ({ name, total }))
-      .sort((left, right) => right.total - left.total)
-      .slice(0, 5);
-  }, [incidents]);
+    return buildBreakdown(grouped, 'assignedTo', 'total').slice(0, 8);
+  }, [filteredIncidents]);
 
-  const maxPriorityValue = Math.max(...priorityBreakdown.map((item) => item.total), 1);
-  const maxAgeValue = Math.max(...ageBuckets.map((item) => item.total), 1);
-  const maxUserValue = Math.max(...topUsers.map((item) => item.total), 1);
+  const breachBreakdown = useMemo(() => {
+    const grouped = filteredIncidents.reduce((accumulator, incident) => {
+      accumulator[incident.hasBreached] = (accumulator[incident.hasBreached] || 0) + 1;
+      return accumulator;
+    }, {});
+
+    return buildBreakdown(grouped, 'status', 'total');
+  }, [filteredIncidents]);
+
+  const recentIncidentTrend = useMemo(() => {
+    const grouped = filteredIncidents.reduce((accumulator, incident) => {
+      if (!incident.createdDate) {
+        return accumulator;
+      }
+
+      const key = incident.createdDate.toISOString().slice(0, 10);
+      accumulator[key] = (accumulator[key] || 0) + 1;
+      return accumulator;
+    }, {});
+
+    return buildBreakdown(grouped, 'date', 'total').slice(-7);
+  }, [filteredIncidents]);
+
+  const maxAssignmentGroupValue = Math.max(...assignmentGroupBreakdown.map((item) => item.total), 1);
+  const maxAssigneeValue = Math.max(...assigneeBreakdown.map((item) => item.total), 1);
+  const maxBreachValue = Math.max(...breachBreakdown.map((item) => item.total), 1);
+  const maxTrendValue = Math.max(...recentIncidentTrend.map((item) => item.total), 1);
 
   const handleFileUpload = async (event) => {
     const selectedFile = event.target.files?.[0];
@@ -192,7 +238,7 @@ function App() {
 
     try {
       const fileBuffer = await selectedFile.arrayBuffer();
-      const workbook = XLSX.read(fileBuffer, { type: 'array' });
+      const workbook = XLSX.read(fileBuffer, { type: 'array', cellDates: true });
       const firstSheetName = workbook.SheetNames[0];
 
       if (!firstSheetName) {
@@ -216,15 +262,21 @@ function App() {
       const nextHeaders = nonEmptyRows[0].map((header, index) => String(header).trim() || `Column ${index + 1}`);
       const nextRows = nonEmptyRows.slice(1).map((row) => nextHeaders.map((_, index) => row[index] ?? ''));
       const requiredIndexes = [
-        findHeaderIndex(nextHeaders, ['incident number', 'incident', 'ticket number', 'ticket', 'incident id']),
-        findHeaderIndex(nextHeaders, ['no of days from ticket raised', 'days from ticket raised', 'days open', 'ageing days', 'aging days', 'days']),
-        findHeaderIndex(nextHeaders, ['users name assigned to', 'assigned to', 'assignee', 'user name', 'assigned user']),
-        findHeaderIndex(nextHeaders, ['priority level', 'priority', 'severity'])
+        findHeaderIndex(nextHeaders, ['number']),
+        findHeaderIndex(nextHeaders, ['assignment group']),
+        findHeaderIndex(nextHeaders, ['assigned to']),
+        findHeaderIndex(nextHeaders, ['priority']),
+        findHeaderIndex(nextHeaders, ['created']),
+        findHeaderIndex(nextHeaders, ['has breached']),
+        findHeaderIndex(nextHeaders, ['category']),
+        findHeaderIndex(nextHeaders, ['sla definition']),
+        findHeaderIndex(nextHeaders, ['stage']),
+        findHeaderIndex(nextHeaders, ['resolved'])
       ];
 
       if (requiredIndexes.some((index) => index === -1)) {
         resetData(
-          'The Excel file must contain Incident Number, No of Days from Ticket Raised, Users Name Assigned To, and Priority Level columns.',
+          'The Excel file must contain Number, Assignment Group, Assigned To, Priority, Created, Has Breached, Category, SLA Definition, Stage, and Resolved columns.',
           selectedFile.name
         );
         return;
@@ -233,7 +285,9 @@ function App() {
       setFileName(selectedFile.name);
       setSheetName(firstSheetName);
       setError('');
-      setSelectedUser('All Users');
+      setSelectedAssignmentGroup(allOption);
+      setSelectedAssignee(allOption);
+      setSelectedBreachStatus(allOption);
       setHeaders(nextHeaders);
       setRows(nextRows);
     } catch (uploadError) {
@@ -251,7 +305,7 @@ function App() {
             <div className="brandBadge">WX</div>
             <div>
               <p className="eyebrow">Service Operations</p>
-              <h2>Incident Command Center</h2>
+              <h2>Ticket Command Center</h2>
             </div>
           </div>
 
@@ -262,27 +316,57 @@ function App() {
           </div>
 
           <div className="sideCard">
-            <label htmlFor="user-filter" className="sideLabel">Assigned user view</label>
+            <label htmlFor="assignment-group-filter" className="sideLabel">Assignment group</label>
             <select
-              id="user-filter"
+              id="assignment-group-filter"
               className="filterSelect"
-              value={selectedUser}
-              onChange={(event) => setSelectedUser(event.target.value)}
-              disabled={users.length === 1}
+              value={selectedAssignmentGroup}
+              onChange={(event) => setSelectedAssignmentGroup(event.target.value)}
+              disabled={assignmentGroups.length === 1}
             >
-              {users.map((user) => (
+              {assignmentGroups.map((group) => (
+                <option key={group} value={group}>{group}</option>
+              ))}
+            </select>
+          </div>
+
+          <div className="sideCard">
+            <label htmlFor="assignee-filter" className="sideLabel">Assigned to</label>
+            <select
+              id="assignee-filter"
+              className="filterSelect"
+              value={selectedAssignee}
+              onChange={(event) => setSelectedAssignee(event.target.value)}
+              disabled={assignees.length === 1}
+            >
+              {assignees.map((user) => (
                 <option key={user} value={user}>{user}</option>
               ))}
             </select>
-            <small>See incidents for a specific assignee in charts and cards.</small>
+          </div>
+
+          <div className="sideCard">
+            <label htmlFor="breach-filter" className="sideLabel">Has breached</label>
+            <select
+              id="breach-filter"
+              className="filterSelect"
+              value={selectedBreachStatus}
+              onChange={(event) => setSelectedBreachStatus(event.target.value)}
+              disabled={breachStatuses.length === 1}
+            >
+              {breachStatuses.map((status) => (
+                <option key={status} value={status}>{status}</option>
+              ))}
+            </select>
+            <small>Users can combine these filters to inspect the dashboard.</small>
           </div>
 
           <div className="sideCard compactList">
             <span className="sideLabel">Expected columns</span>
-            <span>Incident Number</span>
-            <span>No of Days from Ticket Raised</span>
-            <span>Users Name Assigned To</span>
-            <span>Priority Level</span>
+            <span>Number</span>
+            <span>Assignment group</span>
+            <span>Assigned to</span>
+            <span>Has breached</span>
           </div>
         </aside>
 
@@ -290,10 +374,10 @@ function App() {
           <section className="hero heroGradient">
             <div>
               <p className="eyebrow highlight">Operations dashboard</p>
-              <h1>Excel-driven incident dashboard</h1>
+              <h1>Excel-driven ticket analytics</h1>
               <p className="subtitle lightText">
-                Upload an incident workbook and monitor ageing, assignee workload, and priority mix in a
-                colorful dashboard inspired by enterprise support consoles.
+                Upload a workbook containing service tickets and explore visual charts for assignment groups,
+                assignees, and breached records with live filtering.
               </p>
             </div>
 
@@ -317,67 +401,71 @@ function App() {
 
           <section className="metrics">
             <article className="metricCard pinkCard">
-              <span>Total incidents</span>
+              <span>Total tickets</span>
               <strong>{formatNumber(metrics.totalIncidents)}</strong>
             </article>
             <article className="metricCard blueCard">
-              <span>Over 30 days</span>
-              <strong>{formatNumber(metrics.overdue)}</strong>
+              <span>Breached</span>
+              <strong>{formatNumber(metrics.breachedCount)}</strong>
             </article>
             <article className="metricCard purpleCard">
-              <span>High / critical</span>
-              <strong>{formatNumber(metrics.critical)}</strong>
+              <span>Assignment groups</span>
+              <strong>{formatNumber(metrics.uniqueGroups)}</strong>
             </article>
             <article className="metricCard tealCard">
-              <span>Average age</span>
-              <strong>{metrics.averageAge}</strong>
+              <span>Unassigned</span>
+              <strong>{formatNumber(metrics.unassignedCount)}</strong>
             </article>
           </section>
 
           <section className="insightsGrid wideGrid">
             <article className="tableCard overviewCard darkPanel">
               <div className="tableHeader">
-                <h2>Incident priority mix</h2>
-                <span className="pill">{selectedUser}</span>
+                <h2>Assignment group workload</h2>
+                <span className="pill">{selectedAssignmentGroup}</span>
               </div>
               <div className="chartPanel">
-                {priorityBreakdown.length > 0 ? (
-                  priorityBreakdown.map((item) => (
-                    <div className="chartRow" key={item.priority}>
-                      <div className="chartLabel lightText">{item.priority}</div>
+                {assignmentGroupBreakdown.length > 0 ? (
+                  assignmentGroupBreakdown.map((item) => (
+                    <div className="chartRow" key={item.assignmentGroup}>
+                      <div className="chartLabel lightText">{item.assignmentGroup}</div>
                       <div className="chartTrack darkTrack">
                         <div
                           className="chartBar gradientPink"
-                          style={{ width: `${(item.total / maxPriorityValue) * 100}%` }}
+                          style={{ width: `${(item.total / maxAssignmentGroupValue) * 100}%` }}
                         />
                       </div>
                       <div className="chartValue lightText">{item.total}</div>
                     </div>
                   ))
                 ) : (
-                  <div className="emptyState lightText">Upload valid incident data to see the priority graph.</div>
+                  <div className="emptyState lightText">Upload valid data to see assignment group trends.</div>
                 )}
               </div>
             </article>
 
             <article className="tableCard overviewCard">
               <div className="tableHeader">
-                <h2>Incidents by ageing bucket</h2>
-                <span className="pill neutral">Current selection</span>
+                <h2>Has breached distribution</h2>
+                <span className="pill neutral">Filtered view</span>
               </div>
-              <div className="chartPanel verticalPanel">
-                {ageBuckets.map((bucket) => (
-                  <div className="verticalMetric" key={bucket.label}>
-                    <div className="verticalChart">
-                      <div
-                        className="verticalBar"
-                        style={{ height: `${(bucket.total / maxAgeValue) * 100 || 0}%` }}
-                      />
+              <div className="chartPanel verticalPanel compactVerticalPanel">
+                {breachBreakdown.length > 0 ? (
+                  breachBreakdown.map((item) => (
+                    <div className="verticalMetric" key={item.status}>
+                      <div className="verticalChart">
+                        <div
+                          className="verticalBar"
+                          style={{ height: `${(item.total / maxBreachValue) * 100}%` }}
+                        />
+                      </div>
+                      <strong>{item.total}</strong>
+                      <span>{item.status}</span>
                     </div>
-                    <strong>{bucket.total}</strong>
-                    <span>{bucket.label}</span>
-                  </div>
-                ))}
+                  ))
+                ) : (
+                  <div className="emptyState">Breach summary appears here after upload.</div>
+                )}
               </div>
             </article>
           </section>
@@ -385,51 +473,51 @@ function App() {
           <section className="insightsGrid">
             <article className="tableCard overviewCard">
               <div className="tableHeader">
-                <h2>Assigned user workload</h2>
-                <span className="pill neutral">All users</span>
+                <h2>Assigned to distribution</h2>
+                <span className="pill neutral">Filtered view</span>
               </div>
               <div className="chartPanel">
-                {topUsers.length > 0 ? (
-                  topUsers.map((item) => (
-                    <div className="chartRow" key={item.name}>
-                      <div className="chartLabel">{item.name}</div>
+                {assigneeBreakdown.length > 0 ? (
+                  assigneeBreakdown.map((item) => (
+                    <div className="chartRow" key={item.assignedTo}>
+                      <div className="chartLabel">{item.assignedTo}</div>
                       <div className="chartTrack">
                         <div
                           className="chartBar gradientBlue"
-                          style={{ width: `${(item.total / maxUserValue) * 100}%` }}
+                          style={{ width: `${(item.total / maxAssigneeValue) * 100}%` }}
                         />
                       </div>
                       <div className="chartValue">{item.total}</div>
                     </div>
                   ))
                 ) : (
-                  <div className="emptyState">User workload appears here after upload.</div>
+                  <div className="emptyState">Assignee charts appear here after upload.</div>
                 )}
               </div>
             </article>
 
             <article className="tableCard overviewCard summaryGradient">
               <div className="tableHeader">
-                <h2>User incident spotlight</h2>
-                <span className="pill neutral">Filtered</span>
+                <h2>Recent ticket creation</h2>
+                <span className="pill neutral">Last 7 dates</span>
               </div>
-              <div className="summaryList spotlightList">
-                <div>
-                  <span>Selected user</span>
-                  <strong>{selectedUser}</strong>
-                </div>
-                <div>
-                  <span>Visible incidents</span>
-                  <strong>{formatNumber(filteredIncidents.length)}</strong>
-                </div>
-                <div>
-                  <span>Oldest incident age</span>
-                  <strong>{filteredIncidents.length > 0 ? `${Math.max(...filteredIncidents.map((item) => item.daysOpen))} days` : '-'}</strong>
-                </div>
-                <div>
-                  <span>Highest priority in view</span>
-                  <strong>{filteredIncidents[0]?.priority || '-'}</strong>
-                </div>
+              <div className="chartPanel verticalPanel compactVerticalPanel">
+                {recentIncidentTrend.length > 0 ? (
+                  recentIncidentTrend.map((item) => (
+                    <div className="verticalMetric" key={item.date}>
+                      <div className="verticalChart trendChart">
+                        <div
+                          className="verticalBar trendBar"
+                          style={{ height: `${(item.total / maxTrendValue) * 100}%` }}
+                        />
+                      </div>
+                      <strong>{item.total}</strong>
+                      <span>{item.date}</span>
+                    </div>
+                  ))
+                ) : (
+                  <div className="emptyState">Created-date activity appears here when the data is available.</div>
+                )}
               </div>
             </article>
           </section>
@@ -437,11 +525,9 @@ function App() {
           <section className="tableCard">
             <div className="tableHeader tableActions">
               <div>
-                <h2>Incident data preview</h2>
+                <h2>Ticket data preview</h2>
                 <p className="tableSubtitle">
-                  {selectedUser === 'All Users'
-                    ? 'Showing all incidents from the uploaded worksheet.'
-                    : `Showing incidents assigned to ${selectedUser}.`}
+                  Showing {formatNumber(filteredIncidents.length)} records after applying the selected filters.
                 </p>
               </div>
               <span className="pill neutral">First worksheet</span>
@@ -469,7 +555,7 @@ function App() {
                 </table>
               </div>
             ) : (
-              <div className="emptyState">Upload an Excel file to display incident data here.</div>
+              <div className="emptyState">Upload an Excel file to display ticket data here.</div>
             )}
           </section>
         </section>

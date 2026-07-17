@@ -356,6 +356,10 @@ h2 {
   min-height: 240px;
 }
 
+.compactVerticalPanel {
+  grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
+}
+
 .verticalMetric {
   display: flex;
   flex-direction: column;
@@ -379,12 +383,20 @@ h2 {
   background: linear-gradient(180deg, #eff6ff, #e0f2fe);
 }
 
+.trendChart {
+  background: linear-gradient(180deg, #ede9fe, #e0f2fe);
+}
+
 .verticalBar {
   width: 100%;
   max-width: 44px;
   min-height: 6px;
   border-radius: 16px 16px 6px 6px;
   background: linear-gradient(180deg, #06b6d4, #2563eb);
+}
+
+.trendBar {
+  background: linear-gradient(180deg, #8b5cf6, #3b82f6);
 }
 
 .summaryGradient {
