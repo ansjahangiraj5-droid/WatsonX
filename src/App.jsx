@@ -1,10 +1,18 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import * as XLSX from 'xlsx';
 
 const allowedExcelTypes = new Set([
   'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   'application/vnd.ms-excel'
 ]);
+
+function normalizeKey(value) {
+  return String(value ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
 
 function getCellValue(value) {
   if (value === null || value === undefined || value === '') {
@@ -14,63 +22,157 @@ function getCellValue(value) {
   return String(value);
 }
 
+function formatNumber(value) {
+  return new Intl.NumberFormat('en-US').format(value);
+}
+
+function findHeaderIndex(headers, aliases) {
+  return headers.findIndex((header) => aliases.includes(normalizeKey(header)));
+}
+
 function App() {
+  const fileInputRef = useRef(null);
   const [fileName, setFileName] = useState('');
   const [headers, setHeaders] = useState([]);
   const [rows, setRows] = useState([]);
   const [sheetName, setSheetName] = useState('');
   const [error, setError] = useState('');
+  const [selectedUser, setSelectedUser] = useState('All Users');
 
-  const metrics = useMemo(() => {
-    const populatedCells = rows.reduce((count, row) => {
-      return count + row.filter((cell) => String(cell ?? '').trim() !== '').length;
-    }, 0);
-
-    const numericCells = rows.flatMap((row) => row).filter((cell) => typeof cell === 'number');
-    const totalValue = numericCells.reduce((sum, value) => sum + value, 0);
-    const averageValue = numericCells.length > 0 ? totalValue / numericCells.length : 0;
-
-    return {
-      totalRows: rows.length,
-      totalColumns: headers.length,
-      populatedCells,
-      numericCells: numericCells.length,
-      averageValue: averageValue.toFixed(2)
-    };
-  }, [headers, rows]);
-
-  const chartData = useMemo(() => {
-    if (headers.length === 0 || rows.length === 0) {
-      return [];
-    }
-
-    return headers.slice(0, 6).map((header, columnIndex) => {
-      const filledCount = rows.reduce((count, row) => {
-        return String(row[columnIndex] ?? '').trim() !== '' ? count + 1 : count;
-      }, 0);
-
-      return {
-        header,
-        filledCount
-      };
-    });
-  }, [headers, rows]);
-
-  const maxChartValue = useMemo(() => {
-    if (chartData.length === 0) {
-      return 1;
-    }
-
-    return Math.max(...chartData.map((item) => item.filledCount), 1);
-  }, [chartData]);
-
-  const resetData = (message, nextFileName = '') => {
+  const resetData = (message = '', nextFileName = '') => {
     setFileName(nextFileName);
     setHeaders([]);
     setRows([]);
     setSheetName('');
+    setSelectedUser('All Users');
     setError(message);
   };
+
+  const handleClear = () => {
+    resetData();
+
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
+  const incidentConfig = useMemo(() => {
+    if (headers.length === 0) {
+      return null;
+    }
+
+    const incidentIndex = findHeaderIndex(headers, ['incident number', 'incident', 'ticket number', 'ticket', 'incident id']);
+    const daysIndex = findHeaderIndex(headers, ['no of days from ticket raised', 'days from ticket raised', 'days open', 'ageing days', 'aging days', 'days']);
+    const userIndex = findHeaderIndex(headers, ['users name assigned to', 'assigned to', 'assignee', 'user name', 'assigned user']);
+    const priorityIndex = findHeaderIndex(headers, ['priority level', 'priority', 'severity']);
+
+    if ([incidentIndex, daysIndex, userIndex, priorityIndex].some((index) => index === -1)) {
+      return null;
+    }
+
+    return {
+      incidentIndex,
+      daysIndex,
+      userIndex,
+      priorityIndex
+    };
+  }, [headers]);
+
+  const incidents = useMemo(() => {
+    if (!incidentConfig) {
+      return [];
+    }
+
+    return rows.map((row, index) => {
+      const incidentNumber = getCellValue(row[incidentConfig.incidentIndex]);
+      const assignedTo = getCellValue(row[incidentConfig.userIndex]);
+      const priority = getCellValue(row[incidentConfig.priorityIndex]);
+      const daysRaw = row[incidentConfig.daysIndex];
+      const daysOpen = Number(daysRaw);
+
+      return {
+        id: `${incidentNumber}-${index}`,
+        incidentNumber,
+        assignedTo,
+        priority,
+        daysOpen: Number.isFinite(daysOpen) ? daysOpen : 0,
+        originalRow: row
+      };
+    });
+  }, [incidentConfig, rows]);
+
+  const users = useMemo(() => {
+    const names = Array.from(new Set(incidents.map((item) => item.assignedTo).filter((name) => name !== '-')));
+    return ['All Users', ...names];
+  }, [incidents]);
+
+  const filteredIncidents = useMemo(() => {
+    if (selectedUser === 'All Users') {
+      return incidents;
+    }
+
+    return incidents.filter((incident) => incident.assignedTo === selectedUser);
+  }, [incidents, selectedUser]);
+
+  const metrics = useMemo(() => {
+    const overdue = filteredIncidents.filter((incident) => incident.daysOpen > 30).length;
+    const critical = filteredIncidents.filter((incident) => /p1|critical|high/i.test(incident.priority)).length;
+    const averageAge = filteredIncidents.length > 0
+      ? filteredIncidents.reduce((sum, incident) => sum + incident.daysOpen, 0) / filteredIncidents.length
+      : 0;
+
+    return {
+      totalIncidents: filteredIncidents.length,
+      overdue,
+      critical,
+      averageAge: averageAge.toFixed(1)
+    };
+  }, [filteredIncidents]);
+
+  const priorityBreakdown = useMemo(() => {
+    const grouped = filteredIncidents.reduce((accumulator, incident) => {
+      accumulator[incident.priority] = (accumulator[incident.priority] || 0) + 1;
+      return accumulator;
+    }, {});
+
+    return Object.entries(grouped).map(([priority, total]) => ({ priority, total }));
+  }, [filteredIncidents]);
+
+  const ageBuckets = useMemo(() => {
+    const buckets = [
+      { label: '0-7 days', min: 0, max: 7, total: 0 },
+      { label: '8-15 days', min: 8, max: 15, total: 0 },
+      { label: '16-30 days', min: 16, max: 30, total: 0 },
+      { label: '31-60 days', min: 31, max: 60, total: 0 },
+      { label: '60+ days', min: 61, max: Number.POSITIVE_INFINITY, total: 0 }
+    ];
+
+    filteredIncidents.forEach((incident) => {
+      const bucket = buckets.find((item) => incident.daysOpen >= item.min && incident.daysOpen <= item.max);
+      if (bucket) {
+        bucket.total += 1;
+      }
+    });
+
+    return buckets;
+  }, [filteredIncidents]);
+
+  const topUsers = useMemo(() => {
+    const grouped = incidents.reduce((accumulator, incident) => {
+      accumulator[incident.assignedTo] = (accumulator[incident.assignedTo] || 0) + 1;
+      return accumulator;
+    }, {});
+
+    return Object.entries(grouped)
+      .filter(([name]) => name !== '-')
+      .map(([name, total]) => ({ name, total }))
+      .sort((left, right) => right.total - left.total)
+      .slice(0, 5);
+  }, [incidents]);
+
+  const maxPriorityValue = Math.max(...priorityBreakdown.map((item) => item.total), 1);
+  const maxAgeValue = Math.max(...ageBuckets.map((item) => item.total), 1);
+  const maxUserValue = Math.max(...topUsers.map((item) => item.total), 1);
 
   const handleFileUpload = async (event) => {
     const selectedFile = event.target.files?.[0];
@@ -111,11 +213,29 @@ function App() {
         return;
       }
 
+      const nextHeaders = nonEmptyRows[0].map((header, index) => String(header).trim() || `Column ${index + 1}`);
+      const nextRows = nonEmptyRows.slice(1).map((row) => nextHeaders.map((_, index) => row[index] ?? ''));
+      const requiredIndexes = [
+        findHeaderIndex(nextHeaders, ['incident number', 'incident', 'ticket number', 'ticket', 'incident id']),
+        findHeaderIndex(nextHeaders, ['no of days from ticket raised', 'days from ticket raised', 'days open', 'ageing days', 'aging days', 'days']),
+        findHeaderIndex(nextHeaders, ['users name assigned to', 'assigned to', 'assignee', 'user name', 'assigned user']),
+        findHeaderIndex(nextHeaders, ['priority level', 'priority', 'severity'])
+      ];
+
+      if (requiredIndexes.some((index) => index === -1)) {
+        resetData(
+          'The Excel file must contain Incident Number, No of Days from Ticket Raised, Users Name Assigned To, and Priority Level columns.',
+          selectedFile.name
+        );
+        return;
+      }
+
       setFileName(selectedFile.name);
       setSheetName(firstSheetName);
       setError('');
-      setHeaders(nonEmptyRows[0].map((header, index) => String(header).trim() || `Column ${index + 1}`));
-      setRows(nonEmptyRows.slice(1).map((row) => nonEmptyRows[0].map((_, index) => row[index] ?? '')));
+      setSelectedUser('All Users');
+      setHeaders(nextHeaders);
+      setRows(nextRows);
     } catch (uploadError) {
       resetData('Unable to read the uploaded file. Please upload a valid Excel file.', selectedFile.name);
     } finally {
@@ -125,118 +245,234 @@ function App() {
 
   return (
     <main className="page">
-      <section className="hero">
-        <div>
-          <p className="eyebrow">Operations dashboard</p>
-          <h1>Upload an Excel file to generate a live service dashboard</h1>
-          <p className="subtitle">
-            This dashboard accepts only Excel files and turns the first worksheet into summary cards,
-            a visual activity board, and a data table.
-          </p>
-        </div>
-        <label className="uploadCard">
-          <span>Upload Excel file</span>
-          <input type="file" accept=".xlsx,.xls" onChange={handleFileUpload} />
-          <strong>{fileName || 'No Excel file selected'}</strong>
-          <small>{sheetName ? `Sheet: ${sheetName}` : 'Accepted formats: .xlsx, .xls'}</small>
-        </label>
-      </section>
-
-      {error ? <p className="bannerError">{error}</p> : null}
-
-      <section className="metrics">
-        <article>
-          <span>Total records</span>
-          <strong>{metrics.totalRows}</strong>
-        </article>
-        <article>
-          <span>Total fields</span>
-          <strong>{metrics.totalColumns}</strong>
-        </article>
-        <article>
-          <span>Populated cells</span>
-          <strong>{metrics.populatedCells}</strong>
-        </article>
-        <article>
-          <span>Numeric cells</span>
-          <strong>{metrics.numericCells}</strong>
-        </article>
-        <article>
-          <span>Average numeric value</span>
-          <strong>{metrics.averageValue}</strong>
-        </article>
-      </section>
-
-      <section className="insightsGrid">
-        <article className="tableCard overviewCard">
-          <div className="tableHeader">
-            <h2>Dataset health</h2>
-            <span className="pill">Live</span>
+      <section className="appShell">
+        <aside className="sidePanel">
+          <div className="brandBlock">
+            <div className="brandBadge">WX</div>
+            <div>
+              <p className="eyebrow">Service Operations</p>
+              <h2>Incident Command Center</h2>
+            </div>
           </div>
-          <div className="chartPanel">
-            {chartData.length > 0 ? (
-              chartData.map((item) => (
-                <div className="chartRow" key={item.header}>
-                  <div className="chartLabel">{item.header}</div>
-                  <div className="chartTrack">
-                    <div
-                      className="chartBar"
-                      style={{ width: `${(item.filledCount / maxChartValue) * 100}%` }}
-                    />
+
+          <div className="sideCard">
+            <span className="sideLabel">Workbook</span>
+            <strong>{fileName || 'No Excel file uploaded'}</strong>
+            <small>{sheetName ? `Sheet: ${sheetName}` : 'Upload an Excel file to begin'}</small>
+          </div>
+
+          <div className="sideCard">
+            <label htmlFor="user-filter" className="sideLabel">Assigned user view</label>
+            <select
+              id="user-filter"
+              className="filterSelect"
+              value={selectedUser}
+              onChange={(event) => setSelectedUser(event.target.value)}
+              disabled={users.length === 1}
+            >
+              {users.map((user) => (
+                <option key={user} value={user}>{user}</option>
+              ))}
+            </select>
+            <small>See incidents for a specific assignee in charts and cards.</small>
+          </div>
+
+          <div className="sideCard compactList">
+            <span className="sideLabel">Expected columns</span>
+            <span>Incident Number</span>
+            <span>No of Days from Ticket Raised</span>
+            <span>Users Name Assigned To</span>
+            <span>Priority Level</span>
+          </div>
+        </aside>
+
+        <section className="dashboardPanel">
+          <section className="hero heroGradient">
+            <div>
+              <p className="eyebrow highlight">Operations dashboard</p>
+              <h1>Excel-driven incident dashboard</h1>
+              <p className="subtitle lightText">
+                Upload an incident workbook and monitor ageing, assignee workload, and priority mix in a
+                colorful dashboard inspired by enterprise support consoles.
+              </p>
+            </div>
+
+            <div className="uploadCard gradientCard">
+              <span>Upload Excel file</span>
+              <input ref={fileInputRef} type="file" accept=".xlsx,.xls" onChange={handleFileUpload} />
+              <strong>{fileName || 'No Excel file selected'}</strong>
+              <small>{sheetName ? `Sheet: ${sheetName}` : 'Accepted formats: .xlsx and .xls only'}</small>
+              <div className="buttonRow">
+                <button type="button" className="actionButton primaryButton" onClick={() => fileInputRef.current?.click()}>
+                  Choose file
+                </button>
+                <button type="button" className="actionButton ghostButton" onClick={handleClear}>
+                  Clear
+                </button>
+              </div>
+            </div>
+          </section>
+
+          {error ? <p className="bannerError">{error}</p> : null}
+
+          <section className="metrics">
+            <article className="metricCard pinkCard">
+              <span>Total incidents</span>
+              <strong>{formatNumber(metrics.totalIncidents)}</strong>
+            </article>
+            <article className="metricCard blueCard">
+              <span>Over 30 days</span>
+              <strong>{formatNumber(metrics.overdue)}</strong>
+            </article>
+            <article className="metricCard purpleCard">
+              <span>High / critical</span>
+              <strong>{formatNumber(metrics.critical)}</strong>
+            </article>
+            <article className="metricCard tealCard">
+              <span>Average age</span>
+              <strong>{metrics.averageAge}</strong>
+            </article>
+          </section>
+
+          <section className="insightsGrid wideGrid">
+            <article className="tableCard overviewCard darkPanel">
+              <div className="tableHeader">
+                <h2>Incident priority mix</h2>
+                <span className="pill">{selectedUser}</span>
+              </div>
+              <div className="chartPanel">
+                {priorityBreakdown.length > 0 ? (
+                  priorityBreakdown.map((item) => (
+                    <div className="chartRow" key={item.priority}>
+                      <div className="chartLabel lightText">{item.priority}</div>
+                      <div className="chartTrack darkTrack">
+                        <div
+                          className="chartBar gradientPink"
+                          style={{ width: `${(item.total / maxPriorityValue) * 100}%` }}
+                        />
+                      </div>
+                      <div className="chartValue lightText">{item.total}</div>
+                    </div>
+                  ))
+                ) : (
+                  <div className="emptyState lightText">Upload valid incident data to see the priority graph.</div>
+                )}
+              </div>
+            </article>
+
+            <article className="tableCard overviewCard">
+              <div className="tableHeader">
+                <h2>Incidents by ageing bucket</h2>
+                <span className="pill neutral">Current selection</span>
+              </div>
+              <div className="chartPanel verticalPanel">
+                {ageBuckets.map((bucket) => (
+                  <div className="verticalMetric" key={bucket.label}>
+                    <div className="verticalChart">
+                      <div
+                        className="verticalBar"
+                        style={{ height: `${(bucket.total / maxAgeValue) * 100 || 0}%` }}
+                      />
+                    </div>
+                    <strong>{bucket.total}</strong>
+                    <span>{bucket.label}</span>
                   </div>
-                  <div className="chartValue">{item.filledCount}</div>
-                </div>
-              ))
-            ) : (
-              <div className="emptyState">Upload an Excel file to see graphical insights.</div>
-            )}
-          </div>
-        </article>
-
-        <article className="tableCard overviewCard">
-          <div className="tableHeader">
-            <h2>Platform summary</h2>
-            <span className="pill neutral">Workbook</span>
-          </div>
-          <div className="summaryList">
-            <div><span>File name</span><strong>{fileName || '-'}</strong></div>
-            <div><span>Worksheet</span><strong>{sheetName || '-'}</strong></div>
-            <div><span>Visible columns</span><strong>{headers.slice(0, 6).join(', ') || '-'}</strong></div>
-            <div><span>Dashboard status</span><strong>{headers.length > 0 ? 'Ready' : 'Waiting for upload'}</strong></div>
-          </div>
-        </article>
-      </section>
-
-      <section className="tableCard">
-        <div className="tableHeader">
-          <h2>Excel data preview</h2>
-          <span className="pill neutral">First worksheet</span>
-        </div>
-
-        {headers.length > 0 ? (
-          <div className="tableWrapper">
-            <table>
-              <thead>
-                <tr>
-                  {headers.map((header, index) => (
-                    <th key={`${header}-${index}`}>{header}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((row, rowIndex) => (
-                  <tr key={`${rowIndex}-${row.join('-')}`}>
-                    {headers.map((_, columnIndex) => (
-                      <td key={`${rowIndex}-${columnIndex}`}>{getCellValue(row[columnIndex])}</td>
-                    ))}
-                  </tr>
                 ))}
-              </tbody>
-            </table>
-          </div>
-        ) : (
-          <div className="emptyState">Upload an Excel file to display the worksheet data here.</div>
-        )}
+              </div>
+            </article>
+          </section>
+
+          <section className="insightsGrid">
+            <article className="tableCard overviewCard">
+              <div className="tableHeader">
+                <h2>Assigned user workload</h2>
+                <span className="pill neutral">All users</span>
+              </div>
+              <div className="chartPanel">
+                {topUsers.length > 0 ? (
+                  topUsers.map((item) => (
+                    <div className="chartRow" key={item.name}>
+                      <div className="chartLabel">{item.name}</div>
+                      <div className="chartTrack">
+                        <div
+                          className="chartBar gradientBlue"
+                          style={{ width: `${(item.total / maxUserValue) * 100}%` }}
+                        />
+                      </div>
+                      <div className="chartValue">{item.total}</div>
+                    </div>
+                  ))
+                ) : (
+                  <div className="emptyState">User workload appears here after upload.</div>
+                )}
+              </div>
+            </article>
+
+            <article className="tableCard overviewCard summaryGradient">
+              <div className="tableHeader">
+                <h2>User incident spotlight</h2>
+                <span className="pill neutral">Filtered</span>
+              </div>
+              <div className="summaryList spotlightList">
+                <div>
+                  <span>Selected user</span>
+                  <strong>{selectedUser}</strong>
+                </div>
+                <div>
+                  <span>Visible incidents</span>
+                  <strong>{formatNumber(filteredIncidents.length)}</strong>
+                </div>
+                <div>
+                  <span>Oldest incident age</span>
+                  <strong>{filteredIncidents.length > 0 ? `${Math.max(...filteredIncidents.map((item) => item.daysOpen))} days` : '-'}</strong>
+                </div>
+                <div>
+                  <span>Highest priority in view</span>
+                  <strong>{filteredIncidents[0]?.priority || '-'}</strong>
+                </div>
+              </div>
+            </article>
+          </section>
+
+          <section className="tableCard">
+            <div className="tableHeader tableActions">
+              <div>
+                <h2>Incident data preview</h2>
+                <p className="tableSubtitle">
+                  {selectedUser === 'All Users'
+                    ? 'Showing all incidents from the uploaded worksheet.'
+                    : `Showing incidents assigned to ${selectedUser}.`}
+                </p>
+              </div>
+              <span className="pill neutral">First worksheet</span>
+            </div>
+
+            {headers.length > 0 ? (
+              <div className="tableWrapper">
+                <table>
+                  <thead>
+                    <tr>
+                      {headers.map((header, index) => (
+                        <th key={`${header}-${index}`}>{header}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredIncidents.map((incident) => (
+                      <tr key={incident.id}>
+                        {headers.map((_, columnIndex) => (
+                          <td key={`${incident.id}-${columnIndex}`}>{getCellValue(incident.originalRow[columnIndex])}</td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div className="emptyState">Upload an Excel file to display incident data here.</div>
+            )}
+          </section>
+        </section>
       </section>
     </main>
   );
