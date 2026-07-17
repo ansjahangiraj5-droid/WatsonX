@@ -11,7 +11,7 @@
 body {
   margin: 0;
   min-height: 100vh;
-  background: #f3f4f6;
+  background: #eef2f7;
 }
 
 button,
@@ -20,14 +20,14 @@ input {
 }
 
 .page {
-  max-width: 1120px;
+  max-width: 1280px;
   margin: 0 auto;
-  padding: 48px 24px 64px;
+  padding: 32px 24px 56px;
 }
 
 .hero {
   display: grid;
-  grid-template-columns: 1.7fr 1fr;
+  grid-template-columns: minmax(0, 1.8fr) minmax(320px, 0.9fr);
   gap: 24px;
   align-items: stretch;
 }
@@ -41,22 +41,33 @@ input {
   font-size: 0.75rem;
 }
 
-h1 {
+h1,
+h2 {
   margin: 0;
+}
+
+h1 {
   font-size: 2.4rem;
+  line-height: 1.1;
+}
+
+h2 {
+  font-size: 1.1rem;
 }
 
 .subtitle {
   color: #4b5563;
-  max-width: 54ch;
+  max-width: 60ch;
+  margin-top: 14px;
+  line-height: 1.6;
 }
 
 .uploadCard,
 .metrics article,
 .tableCard {
   background: #ffffff;
-  border: 1px solid #d1d5db;
-  border-radius: 20px;
+  border: 1px solid #d8e0ea;
+  border-radius: 18px;
 }
 
 .uploadCard {
@@ -67,34 +78,71 @@ h1 {
   gap: 16px;
 }
 
+.uploadCard span,
+.summaryList span,
+.metrics span {
+  color: #6b7280;
+  font-size: 0.9rem;
+}
+
+.uploadCard strong {
+  font-size: 1.05rem;
+}
+
+.uploadCard small {
+  color: #4b5563;
+}
+
 .uploadCard input {
   width: 100%;
+  border: 1px dashed #9db2ce;
+  border-radius: 12px;
+  padding: 14px;
+  background: #f8fbff;
+}
+
+.bannerError {
+  margin: 18px 0 0;
+  padding: 14px 16px;
+  border-radius: 14px;
+  border: 1px solid #fecaca;
+  background: #fff1f2;
+  color: #b91c1c;
 }
 
 .metrics {
   margin-top: 24px;
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 16px;
 }
 
 .metrics article {
   padding: 20px;
-}
-
-.metrics span {
-  display: block;
-  color: #6b7280;
-  margin-bottom: 8px;
+  min-height: 124px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
 }
 
 .metrics strong {
   font-size: 2rem;
+  color: #0f172a;
+}
+
+.insightsGrid {
+  margin-top: 24px;
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(280px, 0.9fr);
+  gap: 16px;
 }
 
 .tableCard {
-  margin-top: 24px;
   padding: 24px;
+}
+
+.overviewCard {
+  min-height: 320px;
 }
 
 .tableHeader {
@@ -104,30 +152,105 @@ h1 {
   gap: 16px;
 }
 
+.pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 68px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: #dbeafe;
+  color: #1d4ed8;
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.pill.neutral {
+  background: #e5e7eb;
+  color: #374151;
+}
+
+.chartPanel {
+  margin-top: 24px;
+  display: grid;
+  gap: 16px;
+}
+
+.chartRow {
+  display: grid;
+  grid-template-columns: minmax(120px, 180px) minmax(0, 1fr) 48px;
+  gap: 12px;
+  align-items: center;
+}
+
+.chartLabel,
+.chartValue {
+  font-size: 0.92rem;
+  color: #374151;
+}
+
+.chartTrack {
+  height: 14px;
+  background: #e5edf7;
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.chartBar {
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #2563eb, #0ea5e9);
+}
+
+.summaryList {
+  margin-top: 24px;
+  display: grid;
+  gap: 18px;
+}
+
+.summaryList div {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid #edf2f7;
+}
+
+.summaryList strong {
+  color: #0f172a;
+  word-break: break-word;
+}
+
 .tableWrapper {
   overflow: auto;
   margin-top: 20px;
+  border: 1px solid #e5e7eb;
+  border-radius: 14px;
 }
 
 table {
   width: 100%;
   border-collapse: collapse;
+  min-width: 720px;
 }
 
 th,
 td {
   text-align: left;
-  padding: 12px 14px;
+  padding: 13px 14px;
   border-bottom: 1px solid #e5e7eb;
 }
 
 th {
-  background: #eff6ff;
+  background: #f8fafc;
+  color: #334155;
+  position: sticky;
+  top: 0;
 }
 
-.emptyState,
-.error {
-  color: #b91c1c;
+td {
+  color: #1f2937;
+  background: #ffffff;
 }
 
 .emptyState {
@@ -135,17 +258,37 @@ th {
   color: #6b7280;
 }
 
-@media (max-width: 800px) {
-  .hero,
+@media (max-width: 1100px) {
   .metrics {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .insightsGrid,
+  .hero {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 700px) {
   .page {
     padding: 24px 16px 40px;
   }
 
   h1 {
-    font-size: 1.8rem;
+    font-size: 1.9rem;
+  }
+
+  .metrics {
+    grid-template-columns: 1fr;
+  }
+
+  .chartRow {
+    grid-template-columns: 1fr;
+  }
+
+  .tableCard,
+  .uploadCard,
+  .metrics article {
+    padding: 18px;
   }
 }
