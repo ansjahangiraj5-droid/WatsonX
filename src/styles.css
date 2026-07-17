@@ -1,0 +1,151 @@
+:root {
+  font-family: Inter, "Segoe UI", sans-serif;
+  color: #111827;
+  background: #f3f4f6;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: #f3f4f6;
+}
+
+button,
+input {
+  font: inherit;
+}
+
+.page {
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 48px 24px 64px;
+}
+
+.hero {
+  display: grid;
+  grid-template-columns: 1.7fr 1fr;
+  gap: 24px;
+  align-items: stretch;
+}
+
+.eyebrow {
+  margin: 0 0 12px;
+  color: #2563eb;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 0.75rem;
+}
+
+h1 {
+  margin: 0;
+  font-size: 2.4rem;
+}
+
+.subtitle {
+  color: #4b5563;
+  max-width: 54ch;
+}
+
+.uploadCard,
+.metrics article,
+.tableCard {
+  background: #ffffff;
+  border: 1px solid #d1d5db;
+  border-radius: 20px;
+}
+
+.uploadCard {
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 16px;
+}
+
+.uploadCard input {
+  width: 100%;
+}
+
+.metrics {
+  margin-top: 24px;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+}
+
+.metrics article {
+  padding: 20px;
+}
+
+.metrics span {
+  display: block;
+  color: #6b7280;
+  margin-bottom: 8px;
+}
+
+.metrics strong {
+  font-size: 2rem;
+}
+
+.tableCard {
+  margin-top: 24px;
+  padding: 24px;
+}
+
+.tableHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.tableWrapper {
+  overflow: auto;
+  margin-top: 20px;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+th,
+td {
+  text-align: left;
+  padding: 12px 14px;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+th {
+  background: #eff6ff;
+}
+
+.emptyState,
+.error {
+  color: #b91c1c;
+}
+
+.emptyState {
+  padding: 32px 0 8px;
+  color: #6b7280;
+}
+
+@media (max-width: 800px) {
+  .hero,
+  .metrics {
+    grid-template-columns: 1fr;
+  }
+
+  .page {
+    padding: 24px 16px 40px;
+  }
+
+  h1 {
+    font-size: 1.8rem;
+  }
+}
