@@ -5,8 +5,8 @@ const allowedExcelTypes = new Set([
   'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   'application/vnd.ms-excel'
 ]);
-const allOption = 'All';
-const dateRangeOptions = ['Today', 'Last 7 Days', 'Last 30 Days', 'All Time'];
+const allOption = 'ALL';
+const dateRangeOptions = ['Today', 'Last 7 Days', 'Last 30 Days', 'ALL Time'];
 
 function normalizeKey(value) {
   return String(value ?? '')
@@ -140,7 +140,7 @@ function App() {
   const [selectedAssignmentGroup, setSelectedAssignmentGroup] = useState(allOption);
   const [selectedAssignee, setSelectedAssignee] = useState(allOption);
   const [selectedBreachStatus, setSelectedBreachStatus] = useState(allOption);
-  const [selectedDateRange, setSelectedDateRange] = useState('Last 7 Days');
+  const [selectedDateRange, setSelectedDateRange] = useState('ALL Time');
 
   const resetData = (message = '', nextFileName = '') => {
     setFileName(nextFileName);
@@ -150,7 +150,7 @@ function App() {
     setSelectedAssignmentGroup(allOption);
     setSelectedAssignee(allOption);
     setSelectedBreachStatus(allOption);
-    setSelectedDateRange('Last 7 Days');
+    setSelectedDateRange('ALL Time');
     setError(message);
   };
 
@@ -223,7 +223,7 @@ function App() {
       const resolutionDays = calculateBusinessDays(safeCreatedDate, safeResolvedDate);
       const resolutionHours = calculateBusinessHours(safeCreatedDate, safeResolvedDate);
       const actualDuration = target.unit === 'hours' ? resolutionHours : resolutionDays;
-      const withinTarget = target.limit === 0 || actualDuration <= target.limit;
+      const withinTarget = target.limit > 0 && actualDuration <= target.limit;
 
       return {
         id: `${getCellValue(row[incidentConfig.numberIndex])}-${index}`,
@@ -271,7 +271,7 @@ function App() {
 
       let matchesDateRange = true;
 
-      if (selectedDateRange !== 'All Time') {
+      if (selectedDateRange !== 'ALL Time') {
         if (!incident.createdDate) {
           matchesDateRange = false;
         } else {
@@ -317,7 +317,7 @@ function App() {
       return accumulator;
     }, {});
 
-    return buildBreakdown(grouped, 'assignmentGroup', 'total').slice(0, 8);
+    return buildBreakdown(grouped, 'assignmentGroup', 'total');
   }, [filteredIncidents]);
 
   const assigneeBreakdown = useMemo(() => {
@@ -326,13 +326,12 @@ function App() {
       return accumulator;
     }, {});
 
-    return buildBreakdown(grouped, 'assignedTo', 'total').slice(0, 8);
+    return buildBreakdown(grouped, 'assignedTo', 'total');
   }, [filteredIncidents]);
 
   const resolutionDurationBreakdown = useMemo(() => {
     return filteredIncidents
       .filter((incident) => incident.resolvedDate)
-      .slice(0, 8)
       .map((incident) => ({
         number: incident.number,
         value: incident.actualDuration,
@@ -445,7 +444,7 @@ function App() {
       setSelectedAssignmentGroup(allOption);
       setSelectedAssignee(allOption);
       setSelectedBreachStatus(allOption);
-      setSelectedDateRange('Last 7 Days');
+      setSelectedDateRange('ALL Time');
       setHeaders(nextHeaders);
       setRows(nextRows);
     } catch (uploadError) {
@@ -596,7 +595,7 @@ function App() {
                 <h2>Assignment group workload</h2>
                 <span className="pill">{selectedAssignmentGroup}</span>
               </div>
-              <div className="chartPanel">
+              <div className="chartPanel cardScrollArea">
                 {assignmentGroupBreakdown.length > 0 ? (
                   assignmentGroupBreakdown.map((item) => (
                     <div className="chartRow improvedChartRow" key={item.assignmentGroup}>
@@ -621,7 +620,7 @@ function App() {
                 <h2>Resolution time vs SLA</h2>
                 <span className="pill neutral">Created to resolved</span>
               </div>
-              <div className="chartPanel">
+              <div className="chartPanel cardScrollArea">
                 {resolutionDurationBreakdown.length > 0 ? (
                   resolutionDurationBreakdown.map((item) => (
                     <div className="chartRow improvedChartRow" key={item.number}>
@@ -651,7 +650,7 @@ function App() {
                 <h2>Assigned to distribution</h2>
                 <span className="pill neutral">Filtered view</span>
               </div>
-              <div className="chartPanel">
+              <div className="chartPanel cardScrollArea">
                 {assigneeBreakdown.length > 0 ? (
                   assigneeBreakdown.map((item) => (
                     <div className="chartRow improvedChartRow" key={item.assignedTo}>
@@ -680,29 +679,41 @@ function App() {
                 <span className="pill neutral">{selectedDateRange}</span>
               </div>
               {recentIncidentTrend.length > 0 ? (
-                <div className="axisChartCard">
-                  <div className="axisChart">
-                    <div className="axisY">
+                <div className="axisChartCard cardScrollArea">
+                  <div className="lineChart">
+                    <div className="axisY lineAxisY">
                       {[maxTrendValue, Math.ceil(maxTrendValue / 2), 0].map((tick) => (
                         <span key={tick}>{tick}</span>
                       ))}
                     </div>
-                    <div className="axisPlotArea">
-                      <div className="gridLines">
-                        {[0, 1, 2].map((line) => (
-                          <span key={line} />
+                    <div className="lineChartArea">
+                      <svg className="lineSvg" viewBox={`0 0 ${Math.max(recentIncidentTrend.length - 1, 1) * 120 + 40} 220`} preserveAspectRatio="none">
+                        {[40, 110, 180].map((y) => (
+                          <line key={y} x1="0" y1={y} x2={Math.max(recentIncidentTrend.length - 1, 1) * 120 + 40} y2={y} className="lineGrid" />
                         ))}
-                      </div>
-                      <div className="axisBars">
+                        <polyline
+                          className="linePath"
+                          points={recentIncidentTrend.map((item, index) => {
+                            const x = index * 120 + 20;
+                            const y = 180 - ((item.total / maxTrendValue) * 140);
+                            return `${x},${y}`;
+                          }).join(' ')}
+                        />
+                        {recentIncidentTrend.map((item, index) => {
+                          const x = index * 120 + 20;
+                          const y = 180 - ((item.total / maxTrendValue) * 140);
+
+                          return (
+                            <g key={item.date}>
+                              <circle cx={x} cy={y} r="6" className="linePoint" />
+                              <text x={x} y={y - 12} textAnchor="middle" className="lineValue">{item.total}</text>
+                            </g>
+                          );
+                        })}
+                      </svg>
+                      <div className="lineLabels">
                         {recentIncidentTrend.map((item) => (
-                          <div className="axisBarItem" key={item.date}>
-                            <span className="axisValue">{item.total}</span>
-                            <div
-                              className="axisBar"
-                              style={{ height: `${Math.max((item.total / maxTrendValue) * 100, 8)}%` }}
-                            />
-                            <span className="axisLabel">{formatShortDate(new Date(item.date))}</span>
-                          </div>
+                          <span key={item.date}>{formatShortDate(new Date(item.date))}</span>
                         ))}
                       </div>
                     </div>
@@ -714,7 +725,7 @@ function App() {
             </article>
           </section>
 
-          <section className="tableCard">
+          <section className="tableCard overviewCard">
             <div className="tableHeader tableActions fixedHeader">
               <div>
                 <h2>Ticket data preview</h2>
@@ -726,7 +737,7 @@ function App() {
             </div>
 
             {headers.length > 0 ? (
-              <div className="tableWrapper">
+              <div className="tableWrapper dataPreviewScrollArea">
                 <table>
                   <thead>
                     <tr>

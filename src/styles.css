@@ -403,7 +403,17 @@ h2 {
   padding-top: 12px;
 }
 
-.axisChart {
+.cardScrollArea {
+  max-height: 320px;
+  overflow-y: auto;
+  padding-right: 8px;
+}
+
+.dataPreviewScrollArea {
+  max-height: 360px;
+}
+
+.lineChart {
   display: grid;
   grid-template-columns: 52px minmax(0, 1fr);
   gap: 16px;
@@ -421,59 +431,53 @@ h2 {
   font-weight: 700;
 }
 
-.axisPlotArea {
-  position: relative;
-  padding: 8px 0 0;
+.lineAxisY {
+  max-height: 240px;
 }
 
-.gridLines {
-  position: absolute;
-  inset: 8px 0 32px;
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
+.lineChartArea {
+  min-width: 620px;
 }
 
-.gridLines span {
-  border-top: 1px dashed rgba(148, 163, 184, 0.5);
+.lineSvg {
+  width: 100%;
+  height: 220px;
+  overflow: visible;
 }
 
-.axisBars {
-  position: relative;
-  z-index: 1;
-  height: 100%;
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(54px, 1fr));
-  gap: 14px;
-  align-items: end;
-  padding: 8px 0 32px;
+.lineGrid {
+  stroke: rgba(148, 163, 184, 0.5);
+  stroke-dasharray: 4 4;
 }
 
-.axisBarItem {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 8px;
-  min-height: 230px;
+.linePath {
+  fill: none;
+  stroke: #7c3aed;
+  stroke-width: 4;
+  stroke-linejoin: round;
+  stroke-linecap: round;
 }
 
-.axisValue {
-  color: #334155;
-  font-size: 0.85rem;
+.linePoint {
+  fill: #2563eb;
+  stroke: #ffffff;
+  stroke-width: 3;
+}
+
+.lineValue {
+  fill: #0f172a;
+  font-size: 14px;
   font-weight: 800;
 }
 
-.axisBar {
-  width: 100%;
-  max-width: 44px;
-  min-height: 10px;
-  border-radius: 16px 16px 8px 8px;
-  background: linear-gradient(180deg, #8b5cf6, #2563eb);
+.lineLabels {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(80px, 1fr));
+  gap: 12px;
+  margin-top: 8px;
 }
 
-.axisLabel {
-  min-height: 34px;
+.lineLabels span {
   color: #475569;
   font-size: 0.78rem;
   font-weight: 700;
@@ -485,6 +489,18 @@ h2 {
   margin-top: 8px;
   border: 1px solid rgba(148, 163, 184, 0.18);
   border-radius: 18px;
+}
+
+.cardScrollArea::-webkit-scrollbar,
+.dataPreviewScrollArea::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+.cardScrollArea::-webkit-scrollbar-thumb,
+.dataPreviewScrollArea::-webkit-scrollbar-thumb {
+  background: rgba(99, 102, 241, 0.4);
+  border-radius: 999px;
 }
 
 table {
@@ -590,12 +606,8 @@ tr:nth-child(even) td {
     gap: 10px;
   }
 
-  .axisChart {
+  .lineChart {
     grid-template-columns: 36px minmax(0, 1fr);
-    gap: 10px;
-  }
-
-  .axisBars {
     gap: 10px;
   }
 
