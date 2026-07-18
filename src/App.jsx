@@ -673,7 +673,7 @@ function App() {
 
             <div className="uploadCard gradientCard">
               <span>Upload Excel file</span>
-              <input ref={fileInputRef} type="file" accept=".xlsx,.xls" onChange={handleFileUpload} />
+              <input ref={fileInputRef} type="file" accept=".xlsx,.xls" onChange={handleFileUpload} style={{display:"none"}}/>
               <strong>{fileName || 'No Excel file selected'}</strong>
               <small>{sheetName ? `Sheet: ${sheetName}` : 'Accepted formats: .xlsx and .xls only'}</small>
               <div className="buttonRow">
