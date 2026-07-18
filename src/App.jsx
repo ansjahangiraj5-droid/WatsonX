@@ -12,7 +12,8 @@ const requiredFieldAliases = {
   number: ['number'],
   assignmentGroup: ['assignment group'],
   assignedTo: ['assigned to'],
-  priority: ['priority']
+  priority: ['priority'],
+  created: ['created']
 };
 
 function normalizeKey(value) {
@@ -518,7 +519,7 @@ function App() {
 
       if (!nextConfig) {
         resetData(
-          'The Excel file must contain Number, Assignment Group, Assigned To, and Priority columns. Extra fields are allowed.',
+          'The Excel file must contain Number, Assignment Group, Assigned To, Priority, and Created columns. Extra fields are allowed.',
           selectedFile.name
         );
         return;
@@ -655,6 +656,7 @@ function App() {
             <span>Assignment Group</span>
             <span>Assigned To</span>
             <span>Priority</span>
+            <span>Created</span>
           </div>
         </aside>
 
@@ -680,6 +682,9 @@ function App() {
                 </button>
                 <button type="button" className="actionButton ghostButton" onClick={handleClear}>
                   Clear
+                </button>
+                <button type="button" className="actionButton exportButton" onClick={handleExportDashboard}>
+                  Download dashboard file
                 </button>
               </div>
             </div>
@@ -850,12 +855,7 @@ function App() {
                   Showing {formatNumber(filteredIncidents.length)} records after applying the selected filters.
                 </p>
               </div>
-              <div className="previewActions">
-                <button type="button" className="iconButton" onClick={handleExportDashboard} aria-label="Download ticket preview">
-                  ↓
-                </button>
-                <span className="pill neutral">First worksheet</span>
-              </div>
+              <span className="pill neutral">First worksheet</span>
             </div>
 
             {headers.length > 0 ? (

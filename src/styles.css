@@ -244,6 +244,11 @@ h2 {
   border: 1px solid rgba(255, 255, 255, 0.16);
 }
 
+.exportButton {
+  color: #ffffff;
+  background: linear-gradient(135deg, #f59e0b, #ef4444);
+}
+
 .smallButton {
   padding: 8px 14px;
   color: #ffffff;
@@ -321,8 +326,7 @@ h2 {
 }
 
 .tableHeader,
-.tableActions,
-.previewActions {
+.tableActions {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
@@ -582,17 +586,6 @@ tr:nth-child(even) td {
   min-width: 220px;
   display: grid;
   gap: 10px;
-}
-
-.iconButton {
-  width: 40px;
-  height: 40px;
-  border: 0;
-  border-radius: 999px;
-  color: #ffffff;
-  font-size: 1.1rem;
-  font-weight: 800;
-  background: linear-gradient(135deg, #22d3ee, #6366f1);
 }
 
 .emptyState {
