@@ -19,12 +19,17 @@ body {
 
 button,
 input,
-select {
+select,
+textarea {
   font: inherit;
 }
 
 button {
   cursor: pointer;
+}
+
+textarea {
+  resize: vertical;
 }
 
 .page {
@@ -188,13 +193,26 @@ h2 {
 }
 
 .uploadCard input,
-.filterSelect {
+.filterSelect,
+.commentInput {
   width: 100%;
   border: 1px solid rgba(147, 197, 253, 0.28);
   border-radius: 14px;
   padding: 14px 16px;
   color: #ffffff;
   background: rgba(8, 15, 35, 0.78);
+}
+
+.commentInput {
+  min-height: 84px;
+  color: #0f172a;
+  background: #ffffff;
+}
+
+.commentInput:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  background: #e2e8f0;
 }
 
 .filterSelect:disabled {
@@ -224,6 +242,17 @@ h2 {
   color: #ffffff;
   background: rgba(255, 255, 255, 0.12);
   border: 1px solid rgba(255, 255, 255, 0.16);
+}
+
+.exportButton {
+  color: #ffffff;
+  background: linear-gradient(135deg, #f59e0b, #ef4444);
+}
+
+.smallButton {
+  padding: 8px 14px;
+  color: #ffffff;
+  background: linear-gradient(135deg, #0ea5e9, #8b5cf6);
 }
 
 .bannerError {
@@ -506,7 +535,7 @@ h2 {
 table {
   width: 100%;
   border-collapse: collapse;
-  min-width: 920px;
+  min-width: 1100px;
 }
 
 th,
@@ -514,6 +543,7 @@ td {
   text-align: left;
   padding: 13px 14px;
   border-bottom: 1px solid rgba(226, 232, 240, 0.9);
+  vertical-align: top;
 }
 
 th {
@@ -545,6 +575,17 @@ tr:nth-child(even) td {
 .statusBad {
   background: rgba(239, 68, 68, 0.16);
   color: #b91c1c;
+}
+
+.commentCell {
+  min-width: 180px;
+  white-space: pre-wrap;
+}
+
+.commentBox {
+  min-width: 220px;
+  display: grid;
+  gap: 10px;
 }
 
 .emptyState {

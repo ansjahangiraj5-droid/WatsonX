@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import * as XLSX from 'xlsx';
 
 const allowedExcelTypes = new Set([
@@ -7,6 +7,14 @@ const allowedExcelTypes = new Set([
 ]);
 const allOption = 'ALL';
 const dateRangeOptions = ['Today', 'Last 7 Days', 'Last 30 Days', 'ALL Time'];
+const sessionStorageKey = 'watsonx-ticket-dashboard-state';
+const requiredFieldAliases = {
+  number: ['number'],
+  assignmentGroup: ['assignment group'],
+  assignedTo: ['assigned to'],
+  priority: ['priority'],
+  created: ['created']
+};
 
 function normalizeKey(value) {
   return String(value ?? '')
@@ -54,6 +62,36 @@ function isWeekend(date) {
   return day === 0 || day === 6;
 }
 
+function setBusinessBoundary(date, hour, minute = 0, second = 0, millisecond = 0) {
+  const nextDate = new Date(date);
+  nextDate.setHours(hour, minute, second, millisecond);
+  return nextDate;
+}
+
+function moveToNextBusinessStart(date) {
+  const nextDate = new Date(date);
+
+  while (isWeekend(nextDate)) {
+    nextDate.setDate(nextDate.getDate() + 1);
+    nextDate.setHours(9, 0, 0, 0);
+  }
+
+  const dayStart = setBusinessBoundary(nextDate, 9);
+  const dayEnd = setBusinessBoundary(nextDate, 17);
+
+  if (nextDate < dayStart) {
+    return dayStart;
+  }
+
+  if (nextDate >= dayEnd) {
+    nextDate.setDate(nextDate.getDate() + 1);
+    nextDate.setHours(9, 0, 0, 0);
+    return moveToNextBusinessStart(nextDate);
+  }
+
+  return nextDate;
+}
+
 function calculateBusinessDays(startDate, endDate) {
   if (!startDate || !endDate || endDate < startDate) {
     return 0;
@@ -75,24 +113,34 @@ function calculateBusinessDays(startDate, endDate) {
 }
 
 function calculateBusinessHours(startDate, endDate) {
-  if (!startDate || !endDate || endDate < startDate) {
+  if (!startDate || !endDate || endDate <= startDate) {
     return 0;
   }
 
-  let current = new Date(startDate);
+  let current = moveToNextBusinessStart(startDate);
   let totalMilliseconds = 0;
 
   while (current < endDate) {
-    if (!isWeekend(current)) {
-      const endOfDay = new Date(current);
-      endOfDay.setHours(23, 59, 59, 999);
-      const segmentEnd = endOfDay < endDate ? endOfDay : endDate;
+    if (isWeekend(current)) {
+      current = moveToNextBusinessStart(current);
+      continue;
+    }
+
+    const dayEnd = setBusinessBoundary(current, 17);
+    const segmentEnd = dayEnd < endDate ? dayEnd : endDate;
+
+    if (segmentEnd > current) {
       totalMilliseconds += segmentEnd.getTime() - current.getTime();
     }
 
-    const nextDay = startOfDay(current);
+    if (segmentEnd >= endDate) {
+      break;
+    }
+
+    const nextDay = new Date(current);
     nextDay.setDate(nextDay.getDate() + 1);
-    current = nextDay;
+    nextDay.setHours(9, 0, 0, 0);
+    current = moveToNextBusinessStart(nextDay);
   }
 
   return Math.max(totalMilliseconds / (1000 * 60 * 60), 0);
@@ -130,17 +178,113 @@ function formatDuration(incident) {
     : `${incident.resolutionDays} days`;
 }
 
+function serializeDate(value) {
+  return value instanceof Date ? value.toISOString() : value;
+}
+
+function parseDate(value) {
+  if (!value || value === '-') {
+    return null;
+  }
+
+  const parsedDate = new Date(value);
+  return Number.isNaN(parsedDate.getTime()) ? null : parsedDate;
+}
+
+function readStoredState() {
+  if (typeof window === 'undefined') {
+    return null;
+  }
+
+  const savedState = window.sessionStorage.getItem(sessionStorageKey);
+
+  if (!savedState) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(savedState);
+  } catch {
+    return null;
+  }
+}
+
+function createIncidentConfig(headers) {
+  if (headers.length === 0) {
+    return null;
+  }
+
+  const config = {
+    numberIndex: findHeaderIndex(headers, requiredFieldAliases.number),
+    assignmentGroupIndex: findHeaderIndex(headers, requiredFieldAliases.assignmentGroup),
+    assignedToIndex: findHeaderIndex(headers, requiredFieldAliases.assignedTo),
+    priorityIndex: findHeaderIndex(headers, requiredFieldAliases.priority),
+    createdIndex: findHeaderIndex(headers, requiredFieldAliases.created),
+    breachedIndex: findHeaderIndex(headers, ['has breached']),
+    categoryIndex: findHeaderIndex(headers, ['category']),
+    slaIndex: findHeaderIndex(headers, ['sla definition']),
+    stageIndex: findHeaderIndex(headers, ['stage']),
+    resolvedIndex: findHeaderIndex(headers, ['resolved'])
+  };
+
+  if (Object.values(requiredFieldAliases).some((aliases) => findHeaderIndex(headers, aliases) === -1)) {
+    return null;
+  }
+
+  return config;
+}
+
+function buildIncident(row, index, incidentConfig, commentMap = {}) {
+  const createdDate = parseDate(row[incidentConfig.createdIndex]);
+  const resolvedDate = incidentConfig.resolvedIndex >= 0 ? parseDate(row[incidentConfig.resolvedIndex]) : null;
+  const priority = incidentConfig.priorityIndex >= 0 ? getCellValue(row[incidentConfig.priorityIndex]) : '-';
+  const target = getPriorityTarget(priority);
+  const resolutionDays = calculateBusinessDays(createdDate, resolvedDate);
+  const resolutionHours = calculateBusinessHours(createdDate, resolvedDate);
+  const actualDuration = target.unit === 'hours' ? resolutionHours : resolutionDays;
+  const withinTarget = Boolean(resolvedDate) && target.limit > 0 && actualDuration <= target.limit;
+  const number = getCellValue(row[incidentConfig.numberIndex]);
+
+  return {
+    id: `${number}-${index}`,
+    number,
+    assignmentGroup: incidentConfig.assignmentGroupIndex >= 0 ? getCellValue(row[incidentConfig.assignmentGroupIndex]) : '-',
+    assignedTo: incidentConfig.assignedToIndex >= 0 ? getCellValue(row[incidentConfig.assignedToIndex]) : '-',
+    priority,
+    created: incidentConfig.createdIndex >= 0 ? getCellValue(row[incidentConfig.createdIndex]) : '-',
+    createdDate,
+    hasBreached: incidentConfig.breachedIndex >= 0 ? getCellValue(row[incidentConfig.breachedIndex]) : '-',
+    category: incidentConfig.categoryIndex >= 0 ? getCellValue(row[incidentConfig.categoryIndex]) : '-',
+    slaDefinition: incidentConfig.slaIndex >= 0 ? getCellValue(row[incidentConfig.slaIndex]) : '-',
+    stage: incidentConfig.stageIndex >= 0 ? getCellValue(row[incidentConfig.stageIndex]) : '-',
+    resolved: incidentConfig.resolvedIndex >= 0 ? getCellValue(row[incidentConfig.resolvedIndex]) : '-',
+    resolvedDate,
+    resolutionDays,
+    resolutionHours,
+    actualDuration,
+    target,
+    withinTarget,
+    comment: commentMap[number] || '',
+    isCommentEditing: false,
+    originalRow: row
+  };
+}
+
 function App() {
   const fileInputRef = useRef(null);
-  const [fileName, setFileName] = useState('');
-  const [headers, setHeaders] = useState([]);
-  const [rows, setRows] = useState([]);
-  const [sheetName, setSheetName] = useState('');
+  const dashboardExportRef = useRef(null);
+  const initialState = useMemo(() => readStoredState(), []);
+  const [fileName, setFileName] = useState(initialState?.fileName || '');
+  const [headers, setHeaders] = useState(initialState?.headers || []);
+  const [rows, setRows] = useState(initialState?.rows || []);
+  const [sheetName, setSheetName] = useState(initialState?.sheetName || '');
   const [error, setError] = useState('');
-  const [selectedAssignmentGroup, setSelectedAssignmentGroup] = useState(allOption);
-  const [selectedAssignee, setSelectedAssignee] = useState(allOption);
-  const [selectedBreachStatus, setSelectedBreachStatus] = useState(allOption);
-  const [selectedDateRange, setSelectedDateRange] = useState('ALL Time');
+  const [selectedAssignmentGroup, setSelectedAssignmentGroup] = useState(initialState?.selectedAssignmentGroup || allOption);
+  const [selectedAssignee, setSelectedAssignee] = useState(initialState?.selectedAssignee || allOption);
+  const [selectedBreachStatus, setSelectedBreachStatus] = useState(initialState?.selectedBreachStatus || allOption);
+  const [selectedDateRange, setSelectedDateRange] = useState(initialState?.selectedDateRange || 'ALL Time');
+  const [commentsByNumber, setCommentsByNumber] = useState(initialState?.commentsByNumber || {});
+  const [editingComments, setEditingComments] = useState({});
 
   const resetData = (message = '', nextFileName = '') => {
     setFileName(nextFileName);
@@ -151,7 +295,13 @@ function App() {
     setSelectedAssignee(allOption);
     setSelectedBreachStatus(allOption);
     setSelectedDateRange('ALL Time');
+    setCommentsByNumber({});
+    setEditingComments({});
     setError(message);
+
+    if (typeof window !== 'undefined') {
+      window.sessionStorage.removeItem(sessionStorageKey);
+    }
   };
 
   const handleClear = () => {
@@ -162,92 +312,40 @@ function App() {
     }
   };
 
-  const incidentConfig = useMemo(() => {
-    if (headers.length === 0) {
-      return null;
-    }
-
-    const numberIndex = findHeaderIndex(headers, ['number']);
-    const assignmentGroupIndex = findHeaderIndex(headers, ['assignment group']);
-    const assignedToIndex = findHeaderIndex(headers, ['assigned to']);
-    const priorityIndex = findHeaderIndex(headers, ['priority']);
-    const createdIndex = findHeaderIndex(headers, ['created']);
-    const breachedIndex = findHeaderIndex(headers, ['has breached']);
-    const categoryIndex = findHeaderIndex(headers, ['category']);
-    const slaIndex = findHeaderIndex(headers, ['sla definition']);
-    const stageIndex = findHeaderIndex(headers, ['stage']);
-    const resolvedIndex = findHeaderIndex(headers, ['resolved']);
-
-    if ([
-      numberIndex,
-      assignmentGroupIndex,
-      assignedToIndex,
-      priorityIndex,
-      createdIndex,
-      breachedIndex,
-      categoryIndex,
-      slaIndex,
-      stageIndex,
-      resolvedIndex
-    ].some((index) => index === -1)) {
-      return null;
-    }
-
-    return {
-      numberIndex,
-      assignmentGroupIndex,
-      assignedToIndex,
-      priorityIndex,
-      createdIndex,
-      breachedIndex,
-      categoryIndex,
-      slaIndex,
-      stageIndex,
-      resolvedIndex
-    };
-  }, [headers]);
+  const incidentConfig = useMemo(() => createIncidentConfig(headers), [headers]);
 
   const incidents = useMemo(() => {
     if (!incidentConfig) {
       return [];
     }
 
-    return rows.map((row, index) => {
-      const createdRaw = row[incidentConfig.createdIndex];
-      const resolvedRaw = row[incidentConfig.resolvedIndex];
-      const createdDate = createdRaw instanceof Date ? createdRaw : new Date(createdRaw);
-      const resolvedDate = resolvedRaw instanceof Date ? resolvedRaw : new Date(resolvedRaw);
-      const safeCreatedDate = Number.isNaN(createdDate.getTime()) ? null : createdDate;
-      const safeResolvedDate = Number.isNaN(resolvedDate.getTime()) ? null : resolvedDate;
-      const target = getPriorityTarget(row[incidentConfig.priorityIndex]);
-      const resolutionDays = calculateBusinessDays(safeCreatedDate, safeResolvedDate);
-      const resolutionHours = calculateBusinessHours(safeCreatedDate, safeResolvedDate);
-      const actualDuration = target.unit === 'hours' ? resolutionHours : resolutionDays;
-      const withinTarget = target.limit > 0 && actualDuration <= target.limit;
+    return rows.map((row, index) => buildIncident(row, index, incidentConfig, commentsByNumber));
+  }, [commentsByNumber, incidentConfig, rows]);
 
-      return {
-        id: `${getCellValue(row[incidentConfig.numberIndex])}-${index}`,
-        number: getCellValue(row[incidentConfig.numberIndex]),
-        assignmentGroup: getCellValue(row[incidentConfig.assignmentGroupIndex]),
-        assignedTo: getCellValue(row[incidentConfig.assignedToIndex]),
-        priority: getCellValue(row[incidentConfig.priorityIndex]),
-        created: getCellValue(row[incidentConfig.createdIndex]),
-        createdDate: safeCreatedDate,
-        hasBreached: getCellValue(row[incidentConfig.breachedIndex]),
-        category: getCellValue(row[incidentConfig.categoryIndex]),
-        slaDefinition: getCellValue(row[incidentConfig.slaIndex]),
-        stage: getCellValue(row[incidentConfig.stageIndex]),
-        resolved: getCellValue(row[incidentConfig.resolvedIndex]),
-        resolvedDate: safeResolvedDate,
-        resolutionDays,
-        resolutionHours,
-        actualDuration,
-        target,
-        withinTarget,
-        originalRow: row
-      };
-    });
-  }, [incidentConfig, rows]);
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    if (headers.length === 0 && rows.length === 0) {
+      return;
+    }
+
+    window.sessionStorage.setItem(
+      sessionStorageKey,
+      JSON.stringify({
+        fileName,
+        headers,
+        rows: rows.map((row) => row.map((cell) => serializeDate(cell))),
+        sheetName,
+        selectedAssignmentGroup,
+        selectedAssignee,
+        selectedBreachStatus,
+        selectedDateRange,
+        commentsByNumber
+      })
+    );
+  }, [commentsByNumber, fileName, headers, rows, selectedAssignmentGroup, selectedAssignee, selectedBreachStatus, selectedDateRange, sheetName]);
 
   const assignmentGroups = useMemo(() => {
     return [allOption, ...Array.from(new Set(incidents.map((item) => item.assignmentGroup).filter((item) => item !== '-'))).sort()];
@@ -297,7 +395,7 @@ function App() {
   }, [incidents, selectedAssignmentGroup, selectedAssignee, selectedBreachStatus, selectedDateRange]);
 
   const metrics = useMemo(() => {
-    const breachedCount = filteredIncidents.filter((incident) => /true|yes|breached/i.test(incident.hasBreached)).length;
+    const breachedCount = filteredIncidents.filter((incident) => !incident.withinTarget && incident.resolvedDate).length;
     const uniqueGroups = new Set(filteredIncidents.map((incident) => incident.assignmentGroup).filter((item) => item !== '-')).size;
     const resolvedWithinTarget = filteredIncidents.filter((incident) => incident.resolvedDate && incident.withinTarget).length;
     const resolvedOutOfTarget = filteredIncidents.filter((incident) => incident.resolvedDate && !incident.withinTarget).length;
@@ -417,22 +515,11 @@ function App() {
 
       const nextHeaders = nonEmptyRows[0].map((header, index) => String(header).trim() || `Column ${index + 1}`);
       const nextRows = nonEmptyRows.slice(1).map((row) => nextHeaders.map((_, index) => row[index] ?? ''));
-      const requiredIndexes = [
-        findHeaderIndex(nextHeaders, ['number']),
-        findHeaderIndex(nextHeaders, ['assignment group']),
-        findHeaderIndex(nextHeaders, ['assigned to']),
-        findHeaderIndex(nextHeaders, ['priority']),
-        findHeaderIndex(nextHeaders, ['created']),
-        findHeaderIndex(nextHeaders, ['has breached']),
-        findHeaderIndex(nextHeaders, ['category']),
-        findHeaderIndex(nextHeaders, ['sla definition']),
-        findHeaderIndex(nextHeaders, ['stage']),
-        findHeaderIndex(nextHeaders, ['resolved'])
-      ];
+      const nextConfig = createIncidentConfig(nextHeaders);
 
-      if (requiredIndexes.some((index) => index === -1)) {
+      if (!nextConfig) {
         resetData(
-          'The Excel file must contain Number, Assignment Group, Assigned To, Priority, Created, Has Breached, Category, SLA Definition, Stage, and Resolved columns.',
+          'The Excel file must contain Number, Assignment Group, Assigned To, Priority, and Created columns. Extra fields are allowed.',
           selectedFile.name
         );
         return;
@@ -445,6 +532,8 @@ function App() {
       setSelectedAssignee(allOption);
       setSelectedBreachStatus(allOption);
       setSelectedDateRange('ALL Time');
+      setCommentsByNumber({});
+      setEditingComments({});
       setHeaders(nextHeaders);
       setRows(nextRows);
     } catch (uploadError) {
@@ -452,6 +541,35 @@ function App() {
     } finally {
       event.target.value = '';
     }
+  };
+
+  const toggleCommentEditor = (ticketNumber) => {
+    setEditingComments((currentState) => ({
+      ...currentState,
+      [ticketNumber]: !currentState[ticketNumber]
+    }));
+  };
+
+  const handleCommentChange = (ticketNumber, value) => {
+    setCommentsByNumber((currentState) => ({
+      ...currentState,
+      [ticketNumber]: value
+    }));
+  };
+
+  const handleExportDashboard = () => {
+    const worksheetData = [
+      ['Dashboard Section', 'Label', 'Value'],
+      ...assignmentGroupBreakdown.map((item) => ['Assignment group workload', item.assignmentGroup, item.total]),
+      ...resolutionDurationBreakdown.map((item) => ['Resolution time vs SLA', item.number, item.unit === 'hours' ? `${item.value.toFixed(1)} hours` : `${item.value} days`]),
+      ...assigneeBreakdown.map((item) => ['Assigned to distribution', item.assignedTo, item.total]),
+      ...recentIncidentTrend.map((item) => ['Recent ticket creation', item.date, item.total])
+    ];
+
+    const workbook = XLSX.utils.book_new();
+    const worksheet = XLSX.utils.aoa_to_sheet(worksheetData);
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Dashboard Export');
+    XLSX.writeFile(workbook, 'ticket-dashboard-export.xlsx');
   };
 
   return (
@@ -529,19 +647,20 @@ function App() {
                 <option key={option} value={option}>{option}</option>
               ))}
             </select>
-            <small>Choose Today, Last 7 Days, Last 30 Days, or All Time.</small>
+            <small>Choose Today, Last 7 Days, Last 30 Days, or ALL Time.</small>
           </div>
 
           <div className="sideCard compactList">
-            <span className="sideLabel">SLA targets</span>
-            <span>Priority 4: 6 business days</span>
-            <span>Priority 3: 3 business days</span>
-            <span>Priority 2: 8 hours</span>
-            <span>Priority 1: 4 hours</span>
+            <span className="sideLabel">Required fields</span>
+            <span>Number</span>
+            <span>Assignment Group</span>
+            <span>Assigned To</span>
+            <span>Priority</span>
+            <span>Created</span>
           </div>
         </aside>
 
-        <section className="dashboardPanel">
+        <section className="dashboardPanel" ref={dashboardExportRef}>
           <section className="hero heroGradient">
             <div>
               <p className="eyebrow highlight">Operations dashboard</p>
@@ -563,6 +682,9 @@ function App() {
                 </button>
                 <button type="button" className="actionButton ghostButton" onClick={handleClear}>
                   Clear
+                </button>
+                <button type="button" className="actionButton exportButton" onClick={handleExportDashboard}>
+                  Download dashboard file
                 </button>
               </div>
             </div>
@@ -746,6 +868,8 @@ function App() {
                       ))}
                       <th>SLA Duration</th>
                       <th>SLA Status</th>
+                      <th>Recent Update</th>
+                      <th>Comments</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -757,8 +881,27 @@ function App() {
                         <td>{formatDuration(incident)}</td>
                         <td>
                           <span className={`statusBadge ${incident.withinTarget ? 'statusGood' : 'statusBad'}`}>
-                            {incident.withinTarget ? 'Within target' : 'Out of target'}
+                            {incident.withinTarget ? 'Within target' : 'Breached'}
                           </span>
+                        </td>
+                        <td className="commentCell">{incident.comment || '-'}</td>
+                        <td>
+                          <div className="commentBox">
+                            <button
+                              type="button"
+                              className="actionButton smallButton"
+                              onClick={() => toggleCommentEditor(incident.number)}
+                            >
+                              {editingComments[incident.number] ? 'Hide comments' : 'Add comments'}
+                            </button>
+                            <textarea
+                              className="commentInput"
+                              value={commentsByNumber[incident.number] || ''}
+                              onChange={(event) => handleCommentChange(incident.number, event.target.value)}
+                              disabled={!editingComments[incident.number]}
+                              placeholder="Add recent ticket update"
+                            />
+                          </div>
                         </td>
                       </tr>
                     ))}
