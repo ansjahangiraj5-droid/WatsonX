@@ -6,6 +6,7 @@ const allowedExcelTypes = new Set([
   'application/vnd.ms-excel'
 ]);
 const allOption = 'All';
+const dateRangeOptions = ['Today', 'Last 7 Days', 'Last 30 Days', 'All Time'];
 
 function normalizeKey(value) {
   return String(value ?? '')
@@ -27,6 +28,13 @@ function formatNumber(value) {
   return new Intl.NumberFormat('en-US').format(value);
 }
 
+function formatShortDate(value) {
+  return value.toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric'
+  });
+}
+
 function findHeaderIndex(headers, aliases) {
   return headers.findIndex((header) => aliases.includes(normalizeKey(header)));
 }
@@ -35,6 +43,91 @@ function buildBreakdown(items, keyName, valueName) {
   return Object.entries(items)
     .map(([key, total]) => ({ [keyName]: key, [valueName]: total }))
     .sort((left, right) => right[valueName] - left[valueName]);
+}
+
+function startOfDay(date) {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+}
+
+function isWeekend(date) {
+  const day = date.getDay();
+  return day === 0 || day === 6;
+}
+
+function calculateBusinessDays(startDate, endDate) {
+  if (!startDate || !endDate || endDate < startDate) {
+    return 0;
+  }
+
+  const current = startOfDay(startDate);
+  const last = startOfDay(endDate);
+  let total = 0;
+
+  while (current <= last) {
+    if (!isWeekend(current)) {
+      total += 1;
+    }
+
+    current.setDate(current.getDate() + 1);
+  }
+
+  return total;
+}
+
+function calculateBusinessHours(startDate, endDate) {
+  if (!startDate || !endDate || endDate < startDate) {
+    return 0;
+  }
+
+  let current = new Date(startDate);
+  let totalMilliseconds = 0;
+
+  while (current < endDate) {
+    if (!isWeekend(current)) {
+      const endOfDay = new Date(current);
+      endOfDay.setHours(23, 59, 59, 999);
+      const segmentEnd = endOfDay < endDate ? endOfDay : endDate;
+      totalMilliseconds += segmentEnd.getTime() - current.getTime();
+    }
+
+    const nextDay = startOfDay(current);
+    nextDay.setDate(nextDay.getDate() + 1);
+    current = nextDay;
+  }
+
+  return Math.max(totalMilliseconds / (1000 * 60 * 60), 0);
+}
+
+function getPriorityTarget(priority) {
+  const normalizedPriority = normalizeKey(priority);
+
+  if (normalizedPriority === '1' || normalizedPriority.includes('priority 1')) {
+    return { limit: 4, unit: 'hours' };
+  }
+
+  if (normalizedPriority === '2' || normalizedPriority.includes('priority 2')) {
+    return { limit: 8, unit: 'hours' };
+  }
+
+  if (normalizedPriority === '3' || normalizedPriority.includes('priority 3')) {
+    return { limit: 3, unit: 'days' };
+  }
+
+  if (normalizedPriority === '4' || normalizedPriority.includes('priority 4')) {
+    return { limit: 6, unit: 'days' };
+  }
+
+  return { limit: 0, unit: 'days' };
+}
+
+function formatDuration(incident) {
+  if (!incident.createdDate || !incident.resolvedDate) {
+    return '-';
+  }
+
+  return incident.target.unit === 'hours'
+    ? `${incident.resolutionHours.toFixed(1)} hrs`
+    : `${incident.resolutionDays} days`;
 }
 
 function App() {
@@ -47,6 +140,7 @@ function App() {
   const [selectedAssignmentGroup, setSelectedAssignmentGroup] = useState(allOption);
   const [selectedAssignee, setSelectedAssignee] = useState(allOption);
   const [selectedBreachStatus, setSelectedBreachStatus] = useState(allOption);
+  const [selectedDateRange, setSelectedDateRange] = useState('Last 7 Days');
 
   const resetData = (message = '', nextFileName = '') => {
     setFileName(nextFileName);
@@ -56,6 +150,7 @@ function App() {
     setSelectedAssignmentGroup(allOption);
     setSelectedAssignee(allOption);
     setSelectedBreachStatus(allOption);
+    setSelectedDateRange('Last 7 Days');
     setError(message);
   };
 
@@ -119,7 +214,16 @@ function App() {
 
     return rows.map((row, index) => {
       const createdRaw = row[incidentConfig.createdIndex];
+      const resolvedRaw = row[incidentConfig.resolvedIndex];
       const createdDate = createdRaw instanceof Date ? createdRaw : new Date(createdRaw);
+      const resolvedDate = resolvedRaw instanceof Date ? resolvedRaw : new Date(resolvedRaw);
+      const safeCreatedDate = Number.isNaN(createdDate.getTime()) ? null : createdDate;
+      const safeResolvedDate = Number.isNaN(resolvedDate.getTime()) ? null : resolvedDate;
+      const target = getPriorityTarget(row[incidentConfig.priorityIndex]);
+      const resolutionDays = calculateBusinessDays(safeCreatedDate, safeResolvedDate);
+      const resolutionHours = calculateBusinessHours(safeCreatedDate, safeResolvedDate);
+      const actualDuration = target.unit === 'hours' ? resolutionHours : resolutionDays;
+      const withinTarget = target.limit === 0 || actualDuration <= target.limit;
 
       return {
         id: `${getCellValue(row[incidentConfig.numberIndex])}-${index}`,
@@ -128,12 +232,18 @@ function App() {
         assignedTo: getCellValue(row[incidentConfig.assignedToIndex]),
         priority: getCellValue(row[incidentConfig.priorityIndex]),
         created: getCellValue(row[incidentConfig.createdIndex]),
-        createdDate: Number.isNaN(createdDate.getTime()) ? null : createdDate,
+        createdDate: safeCreatedDate,
         hasBreached: getCellValue(row[incidentConfig.breachedIndex]),
         category: getCellValue(row[incidentConfig.categoryIndex]),
         slaDefinition: getCellValue(row[incidentConfig.slaIndex]),
         stage: getCellValue(row[incidentConfig.stageIndex]),
         resolved: getCellValue(row[incidentConfig.resolvedIndex]),
+        resolvedDate: safeResolvedDate,
+        resolutionDays,
+        resolutionHours,
+        actualDuration,
+        target,
+        withinTarget,
         originalRow: row
       };
     });
@@ -152,25 +262,52 @@ function App() {
   }, [incidents]);
 
   const filteredIncidents = useMemo(() => {
+    const today = startOfDay(new Date());
+
     return incidents.filter((incident) => {
       const matchesAssignmentGroup = selectedAssignmentGroup === allOption || incident.assignmentGroup === selectedAssignmentGroup;
       const matchesAssignee = selectedAssignee === allOption || incident.assignedTo === selectedAssignee;
       const matchesBreachStatus = selectedBreachStatus === allOption || incident.hasBreached === selectedBreachStatus;
 
-      return matchesAssignmentGroup && matchesAssignee && matchesBreachStatus;
+      let matchesDateRange = true;
+
+      if (selectedDateRange !== 'All Time') {
+        if (!incident.createdDate) {
+          matchesDateRange = false;
+        } else {
+          const createdDay = startOfDay(incident.createdDate);
+          const diffDays = Math.floor((today.getTime() - createdDay.getTime()) / (1000 * 60 * 60 * 24));
+
+          if (selectedDateRange === 'Today') {
+            matchesDateRange = diffDays === 0;
+          }
+
+          if (selectedDateRange === 'Last 7 Days') {
+            matchesDateRange = diffDays >= 0 && diffDays < 7;
+          }
+
+          if (selectedDateRange === 'Last 30 Days') {
+            matchesDateRange = diffDays >= 0 && diffDays < 30;
+          }
+        }
+      }
+
+      return matchesAssignmentGroup && matchesAssignee && matchesBreachStatus && matchesDateRange;
     });
-  }, [incidents, selectedAssignmentGroup, selectedAssignee, selectedBreachStatus]);
+  }, [incidents, selectedAssignmentGroup, selectedAssignee, selectedBreachStatus, selectedDateRange]);
 
   const metrics = useMemo(() => {
     const breachedCount = filteredIncidents.filter((incident) => /true|yes|breached/i.test(incident.hasBreached)).length;
-    const unassignedCount = filteredIncidents.filter((incident) => incident.assignedTo === '-').length;
     const uniqueGroups = new Set(filteredIncidents.map((incident) => incident.assignmentGroup).filter((item) => item !== '-')).size;
+    const resolvedWithinTarget = filteredIncidents.filter((incident) => incident.resolvedDate && incident.withinTarget).length;
+    const resolvedOutOfTarget = filteredIncidents.filter((incident) => incident.resolvedDate && !incident.withinTarget).length;
 
     return {
       totalIncidents: filteredIncidents.length,
       breachedCount,
       uniqueGroups,
-      unassignedCount
+      resolvedWithinTarget,
+      resolvedOutOfTarget
     };
   }, [filteredIncidents]);
 
@@ -192,13 +329,17 @@ function App() {
     return buildBreakdown(grouped, 'assignedTo', 'total').slice(0, 8);
   }, [filteredIncidents]);
 
-  const breachBreakdown = useMemo(() => {
-    const grouped = filteredIncidents.reduce((accumulator, incident) => {
-      accumulator[incident.hasBreached] = (accumulator[incident.hasBreached] || 0) + 1;
-      return accumulator;
-    }, {});
-
-    return buildBreakdown(grouped, 'status', 'total');
+  const resolutionDurationBreakdown = useMemo(() => {
+    return filteredIncidents
+      .filter((incident) => incident.resolvedDate)
+      .slice(0, 8)
+      .map((incident) => ({
+        number: incident.number,
+        value: incident.actualDuration,
+        target: incident.target.limit,
+        unit: incident.target.unit,
+        withinTarget: incident.withinTarget
+      }));
   }, [filteredIncidents]);
 
   const recentIncidentTrend = useMemo(() => {
@@ -212,12 +353,28 @@ function App() {
       return accumulator;
     }, {});
 
-    return buildBreakdown(grouped, 'date', 'total').slice(-7);
-  }, [filteredIncidents]);
+    const orderedItems = Object.entries(grouped)
+      .map(([date, total]) => ({ date, total }))
+      .sort((left, right) => left.date.localeCompare(right.date));
+
+    if (selectedDateRange === 'Today') {
+      return orderedItems.slice(-1);
+    }
+
+    if (selectedDateRange === 'Last 7 Days') {
+      return orderedItems.slice(-7);
+    }
+
+    if (selectedDateRange === 'Last 30 Days') {
+      return orderedItems.slice(-30);
+    }
+
+    return orderedItems;
+  }, [filteredIncidents, selectedDateRange]);
 
   const maxAssignmentGroupValue = Math.max(...assignmentGroupBreakdown.map((item) => item.total), 1);
   const maxAssigneeValue = Math.max(...assigneeBreakdown.map((item) => item.total), 1);
-  const maxBreachValue = Math.max(...breachBreakdown.map((item) => item.total), 1);
+  const maxResolutionValue = Math.max(...resolutionDurationBreakdown.map((item) => Math.max(item.value, item.target)), 1);
   const maxTrendValue = Math.max(...recentIncidentTrend.map((item) => item.total), 1);
 
   const handleFileUpload = async (event) => {
@@ -288,6 +445,7 @@ function App() {
       setSelectedAssignmentGroup(allOption);
       setSelectedAssignee(allOption);
       setSelectedBreachStatus(allOption);
+      setSelectedDateRange('Last 7 Days');
       setHeaders(nextHeaders);
       setRows(nextRows);
     } catch (uploadError) {
@@ -309,7 +467,7 @@ function App() {
             </div>
           </div>
 
-          <div className="sideCard">
+          <div className="sideCard brightCard">
             <span className="sideLabel">Workbook</span>
             <strong>{fileName || 'No Excel file uploaded'}</strong>
             <small>{sheetName ? `Sheet: ${sheetName}` : 'Upload an Excel file to begin'}</small>
@@ -358,15 +516,29 @@ function App() {
                 <option key={status} value={status}>{status}</option>
               ))}
             </select>
-            <small>Users can combine these filters to inspect the dashboard.</small>
+          </div>
+
+          <div className="sideCard">
+            <label htmlFor="date-range-filter" className="sideLabel">Created date range</label>
+            <select
+              id="date-range-filter"
+              className="filterSelect"
+              value={selectedDateRange}
+              onChange={(event) => setSelectedDateRange(event.target.value)}
+            >
+              {dateRangeOptions.map((option) => (
+                <option key={option} value={option}>{option}</option>
+              ))}
+            </select>
+            <small>Choose Today, Last 7 Days, Last 30 Days, or All Time.</small>
           </div>
 
           <div className="sideCard compactList">
-            <span className="sideLabel">Expected columns</span>
-            <span>Number</span>
-            <span>Assignment group</span>
-            <span>Assigned to</span>
-            <span>Has breached</span>
+            <span className="sideLabel">SLA targets</span>
+            <span>Priority 4: 6 business days</span>
+            <span>Priority 3: 3 business days</span>
+            <span>Priority 2: 8 hours</span>
+            <span>Priority 1: 4 hours</span>
           </div>
         </aside>
 
@@ -376,8 +548,8 @@ function App() {
               <p className="eyebrow highlight">Operations dashboard</p>
               <h1>Excel-driven ticket analytics</h1>
               <p className="subtitle lightText">
-                Upload a workbook containing service tickets and explore visual charts for assignment groups,
-                assignees, and breached records with live filtering.
+                Upload a workbook containing service tickets and explore visible charts for assignment groups,
+                assignees, resolution performance, and ticket creation trends with live filtering.
               </p>
             </div>
 
@@ -409,25 +581,25 @@ function App() {
               <strong>{formatNumber(metrics.breachedCount)}</strong>
             </article>
             <article className="metricCard purpleCard">
-              <span>Assignment groups</span>
-              <strong>{formatNumber(metrics.uniqueGroups)}</strong>
+              <span>Within target</span>
+              <strong>{formatNumber(metrics.resolvedWithinTarget)}</strong>
             </article>
             <article className="metricCard tealCard">
-              <span>Unassigned</span>
-              <strong>{formatNumber(metrics.unassignedCount)}</strong>
+              <span>Out of target</span>
+              <strong>{formatNumber(metrics.resolvedOutOfTarget)}</strong>
             </article>
           </section>
 
           <section className="insightsGrid wideGrid">
             <article className="tableCard overviewCard darkPanel">
-              <div className="tableHeader">
+              <div className="tableHeader fixedHeader">
                 <h2>Assignment group workload</h2>
                 <span className="pill">{selectedAssignmentGroup}</span>
               </div>
               <div className="chartPanel">
                 {assignmentGroupBreakdown.length > 0 ? (
                   assignmentGroupBreakdown.map((item) => (
-                    <div className="chartRow" key={item.assignmentGroup}>
+                    <div className="chartRow improvedChartRow" key={item.assignmentGroup}>
                       <div className="chartLabel lightText">{item.assignmentGroup}</div>
                       <div className="chartTrack darkTrack">
                         <div
@@ -445,26 +617,29 @@ function App() {
             </article>
 
             <article className="tableCard overviewCard">
-              <div className="tableHeader">
-                <h2>Has breached distribution</h2>
-                <span className="pill neutral">Filtered view</span>
+              <div className="tableHeader fixedHeader">
+                <h2>Resolution time vs SLA</h2>
+                <span className="pill neutral">Created to resolved</span>
               </div>
-              <div className="chartPanel verticalPanel compactVerticalPanel">
-                {breachBreakdown.length > 0 ? (
-                  breachBreakdown.map((item) => (
-                    <div className="verticalMetric" key={item.status}>
-                      <div className="verticalChart">
+              <div className="chartPanel">
+                {resolutionDurationBreakdown.length > 0 ? (
+                  resolutionDurationBreakdown.map((item) => (
+                    <div className="chartRow improvedChartRow" key={item.number}>
+                      <div className="chartLabel multiLineLabel">
+                        <strong>{item.number}</strong>
+                        <span>{item.unit === 'hours' ? `${item.target} hrs target` : `${item.target} day target`}</span>
+                      </div>
+                      <div className="chartTrack slaTrack">
                         <div
-                          className="verticalBar"
-                          style={{ height: `${(item.total / maxBreachValue) * 100}%` }}
+                          className={`chartBar ${item.withinTarget ? 'gradientGreen' : 'gradientOrange'}`}
+                          style={{ width: `${(item.value / maxResolutionValue) * 100}%` }}
                         />
                       </div>
-                      <strong>{item.total}</strong>
-                      <span>{item.status}</span>
+                      <div className="chartValue darkValue">{item.unit === 'hours' ? `${item.value.toFixed(1)}h` : `${item.value}d`}</div>
                     </div>
                   ))
                 ) : (
-                  <div className="emptyState">Breach summary appears here after upload.</div>
+                  <div className="emptyState">Resolution duration appears here for resolved tickets.</div>
                 )}
               </div>
             </article>
@@ -472,22 +647,22 @@ function App() {
 
           <section className="insightsGrid">
             <article className="tableCard overviewCard">
-              <div className="tableHeader">
+              <div className="tableHeader fixedHeader">
                 <h2>Assigned to distribution</h2>
                 <span className="pill neutral">Filtered view</span>
               </div>
               <div className="chartPanel">
                 {assigneeBreakdown.length > 0 ? (
                   assigneeBreakdown.map((item) => (
-                    <div className="chartRow" key={item.assignedTo}>
-                      <div className="chartLabel">{item.assignedTo}</div>
+                    <div className="chartRow improvedChartRow" key={item.assignedTo}>
+                      <div className="chartLabel darkValue">{item.assignedTo}</div>
                       <div className="chartTrack">
                         <div
                           className="chartBar gradientBlue"
                           style={{ width: `${(item.total / maxAssigneeValue) * 100}%` }}
                         />
                       </div>
-                      <div className="chartValue">{item.total}</div>
+                      <div className="chartValue darkValue">{item.total}</div>
                     </div>
                   ))
                 ) : (
@@ -497,36 +672,53 @@ function App() {
             </article>
 
             <article className="tableCard overviewCard summaryGradient">
-              <div className="tableHeader">
-                <h2>Recent ticket creation</h2>
-                <span className="pill neutral">Last 7 dates</span>
+              <div className="tableHeader fixedHeader trendHeader">
+                <div>
+                  <h2>Recent ticket creation</h2>
+                  <p className="tableSubtitle darkSubtitle">Y-axis shows ticket count, X-axis shows created dates.</p>
+                </div>
+                <span className="pill neutral">{selectedDateRange}</span>
               </div>
-              <div className="chartPanel verticalPanel compactVerticalPanel">
-                {recentIncidentTrend.length > 0 ? (
-                  recentIncidentTrend.map((item) => (
-                    <div className="verticalMetric" key={item.date}>
-                      <div className="verticalChart trendChart">
-                        <div
-                          className="verticalBar trendBar"
-                          style={{ height: `${(item.total / maxTrendValue) * 100}%` }}
-                        />
-                      </div>
-                      <strong>{item.total}</strong>
-                      <span>{item.date}</span>
+              {recentIncidentTrend.length > 0 ? (
+                <div className="axisChartCard">
+                  <div className="axisChart">
+                    <div className="axisY">
+                      {[maxTrendValue, Math.ceil(maxTrendValue / 2), 0].map((tick) => (
+                        <span key={tick}>{tick}</span>
+                      ))}
                     </div>
-                  ))
-                ) : (
-                  <div className="emptyState">Created-date activity appears here when the data is available.</div>
-                )}
-              </div>
+                    <div className="axisPlotArea">
+                      <div className="gridLines">
+                        {[0, 1, 2].map((line) => (
+                          <span key={line} />
+                        ))}
+                      </div>
+                      <div className="axisBars">
+                        {recentIncidentTrend.map((item) => (
+                          <div className="axisBarItem" key={item.date}>
+                            <span className="axisValue">{item.total}</span>
+                            <div
+                              className="axisBar"
+                              style={{ height: `${Math.max((item.total / maxTrendValue) * 100, 8)}%` }}
+                            />
+                            <span className="axisLabel">{formatShortDate(new Date(item.date))}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="emptyState">Created-date activity appears here when the data is available.</div>
+              )}
             </article>
           </section>
 
           <section className="tableCard">
-            <div className="tableHeader tableActions">
+            <div className="tableHeader tableActions fixedHeader">
               <div>
                 <h2>Ticket data preview</h2>
-                <p className="tableSubtitle">
+                <p className="tableSubtitle darkSubtitle">
                   Showing {formatNumber(filteredIncidents.length)} records after applying the selected filters.
                 </p>
               </div>
@@ -541,6 +733,8 @@ function App() {
                       {headers.map((header, index) => (
                         <th key={`${header}-${index}`}>{header}</th>
                       ))}
+                      <th>SLA Duration</th>
+                      <th>SLA Status</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -549,6 +743,12 @@ function App() {
                         {headers.map((_, columnIndex) => (
                           <td key={`${incident.id}-${columnIndex}`}>{getCellValue(incident.originalRow[columnIndex])}</td>
                         ))}
+                        <td>{formatDuration(incident)}</td>
+                        <td>
+                          <span className={`statusBadge ${incident.withinTarget ? 'statusGood' : 'statusBad'}`}>
+                            {incident.withinTarget ? 'Within target' : 'Out of target'}
+                          </span>
+                        </td>
                       </tr>
                     ))}
                   </tbody>
