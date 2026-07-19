@@ -12,8 +12,10 @@ const requiredFieldAliases = {
   number: ['number'],
   assignmentGroup: ['assignment group'],
   assignedTo: ['assigned to'],
-  priority: ['priority'],
-  created: ['created']
+  priority: ['priority']
+};
+const optionalFieldAliases = {
+  created: ['created', 'opened', 'open date', 'date created', 'creation date', 'date opened']
 };
 
 function normalizeKey(value) {
@@ -44,7 +46,10 @@ function formatShortDate(value) {
 }
 
 function findHeaderIndex(headers, aliases) {
-  return headers.findIndex((header) => aliases.includes(normalizeKey(header)));
+  return headers.findIndex((header) => {
+    const normalized = normalizeKey(header);
+    return aliases.some((alias) => normalized === alias || normalized.includes(alias) || alias.includes(normalized));
+  });
 }
 
 function buildBreakdown(items, keyName, valueName) {
@@ -219,7 +224,7 @@ function createIncidentConfig(headers) {
     assignmentGroupIndex: findHeaderIndex(headers, requiredFieldAliases.assignmentGroup),
     assignedToIndex: findHeaderIndex(headers, requiredFieldAliases.assignedTo),
     priorityIndex: findHeaderIndex(headers, requiredFieldAliases.priority),
-    createdIndex: findHeaderIndex(headers, requiredFieldAliases.created),
+    createdIndex: findHeaderIndex(headers, optionalFieldAliases.created),
     breachedIndex: findHeaderIndex(headers, ['has breached']),
     categoryIndex: findHeaderIndex(headers, ['category']),
     slaIndex: findHeaderIndex(headers, ['sla definition']),
@@ -235,7 +240,7 @@ function createIncidentConfig(headers) {
 }
 
 function buildIncident(row, index, incidentConfig, commentMap = {}) {
-  const createdDate = parseDate(row[incidentConfig.createdIndex]);
+  const createdDate = incidentConfig.createdIndex >= 0 ? parseDate(row[incidentConfig.createdIndex]) : null;
   const resolvedDate = incidentConfig.resolvedIndex >= 0 ? parseDate(row[incidentConfig.resolvedIndex]) : null;
   const priority = incidentConfig.priorityIndex >= 0 ? getCellValue(row[incidentConfig.priorityIndex]) : '-';
   const target = getPriorityTarget(priority);
@@ -519,7 +524,7 @@ function App() {
 
       if (!nextConfig) {
         resetData(
-          'The Excel file must contain Number, Assignment Group, Assigned To, Priority, and Created columns. Extra fields are allowed.',
+          'The Excel file must contain Number, Assignment Group, Assigned To, and Priority columns. Extra fields are allowed.',
           selectedFile.name
         );
         return;
@@ -555,6 +560,40 @@ function App() {
       ...currentState,
       [ticketNumber]: value
     }));
+  };
+
+  const handleExportTicketData = async () => {
+    const extraHeaders = ['SLA Duration', 'SLA Status', 'Comments'];
+    const worksheetData = [
+      [...headers, ...extraHeaders],
+      ...filteredIncidents.map((incident) => [
+        ...headers.map((_, i) => getCellValue(incident.originalRow[i])),
+        formatDuration(incident),
+        incident.withinTarget ? 'Within target' : 'Breached',
+        incident.comment || ''
+      ])
+    ];
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet(worksheetData), 'Ticket Data');
+
+    if (window.showSaveFilePicker) {
+      try {
+        const fileHandle = await window.showSaveFilePicker({
+          suggestedName: 'ticket-data-preview.xlsx',
+          types: [{ description: 'Excel Workbook', accept: { 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx'] } }]
+        });
+        const writable = await fileHandle.createWritable();
+        const buffer = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
+        await writable.write(new Blob([buffer], { type: 'application/octet-stream' }));
+        await writable.close();
+      } catch (err) {
+        if (err.name !== 'AbortError') {
+          XLSX.writeFile(workbook, 'ticket-data-preview.xlsx');
+        }
+      }
+    } else {
+      XLSX.writeFile(workbook, 'ticket-data-preview.xlsx');
+    }
   };
 
   const handleExportDashboard = () => {
@@ -656,7 +695,6 @@ function App() {
             <span>Assignment Group</span>
             <span>Assigned To</span>
             <span>Priority</span>
-            <span>Created</span>
           </div>
         </aside>
 
@@ -855,7 +893,12 @@ function App() {
                   Showing {formatNumber(filteredIncidents.length)} records after applying the selected filters.
                 </p>
               </div>
-              <span className="pill neutral">First worksheet</span>
+              <div className="pillButtonGroup">
+                <span className="pill neutral">First worksheet</span>
+                <button type="button" className="actionButton exportButton" onClick={handleExportTicketData} disabled={filteredIncidents.length === 0}>
+                  Download Excel
+                </button>
+              </div>
             </div>
 
             {headers.length > 0 ? (

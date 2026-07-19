@@ -363,6 +363,13 @@ h2 {
   color: #1e293b;
 }
 
+.pillButtonGroup {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
 .chartPanel {
   display: grid;
   gap: 16px;
