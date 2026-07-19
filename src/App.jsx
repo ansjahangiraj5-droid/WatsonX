@@ -518,8 +518,15 @@ function App() {
         return;
       }
 
-      const nextHeaders = nonEmptyRows[0].map((header, index) => String(header).trim() || `Column ${index + 1}`);
-      const nextRows = nonEmptyRows.slice(1).map((row) => nextHeaders.map((_, index) => row[index] ?? ''));
+      const computedColumns = ['sla duration', 'sla status', 'comments'];
+      const rawHeaders = nonEmptyRows[0].map((header, index) => String(header).trim() || `Column ${index + 1}`);
+      const computedIndexes = new Set(rawHeaders.map((h, i) => computedColumns.includes(normalizeKey(h)) ? i : -1).filter((i) => i !== -1));
+      const nextHeaders = rawHeaders.filter((_, i) => !computedIndexes.has(i));
+      const commentsColIndex = rawHeaders.findIndex((h) => normalizeKey(h) === 'comments');
+      const nextRows = nonEmptyRows.slice(1).map((row) => nextHeaders.map((_, i) => {
+        const originalIndex = rawHeaders.indexOf(nextHeaders[i]);
+        return row[originalIndex] ?? '';
+      }));
       const nextConfig = createIncidentConfig(nextHeaders);
 
       if (!nextConfig) {
@@ -530,6 +537,16 @@ function App() {
         return;
       }
 
+      const restoredComments = {};
+      if (commentsColIndex >= 0) {
+        const numberColIndex = rawHeaders.findIndex((h) => normalizeKey(h) === 'number');
+        nonEmptyRows.slice(1).forEach((row) => {
+          const num = String(row[numberColIndex] ?? '').trim();
+          const comment = String(row[commentsColIndex] ?? '').trim();
+          if (num && comment) restoredComments[num] = comment;
+        });
+      }
+
       setFileName(selectedFile.name);
       setSheetName(firstSheetName);
       setError('');
@@ -537,7 +554,7 @@ function App() {
       setSelectedAssignee(allOption);
       setSelectedBreachStatus(allOption);
       setSelectedDateRange('ALL Time');
-      setCommentsByNumber({});
+      setCommentsByNumber(restoredComments);
       setEditingComments({});
       setHeaders(nextHeaders);
       setRows(nextRows);
