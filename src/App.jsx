@@ -827,6 +827,8 @@ function DailyTrackerPage({ onBack }) {
   // add-column dialog
   const [showAddColDialog, setShowAddColDialog] = useState(false);
   const [newColLabel, setNewColLabel] = useState('');
+  // fullscreen ticket preview
+  const [previewFullscreen, setPreviewFullscreen] = useState(false);
 
   const resetData = (message = '', nextFileName = '') => {
     setFileName(nextFileName);
@@ -1555,7 +1557,7 @@ function DailyTrackerPage({ onBack }) {
             </article>
           </section>
 
-          <section className="tableCard overviewCard">
+          <section className={`tableCard overviewCard${previewFullscreen ? ' previewFullscreen' : ''}`}>
             <div className="tableHeader tableActions fixedHeader">
               <div>
                 <h2>Ticket data preview</h2>
@@ -1576,6 +1578,27 @@ function DailyTrackerPage({ onBack }) {
                 </button>
                 <button type="button" className="actionButton exportButton" onClick={handleExportTicketData} disabled={filteredIncidents.length === 0}>
                   Download Excel
+                </button>
+                <button
+                  type="button"
+                  className="iconButton fullscreenToggleBtn"
+                  onClick={() => setPreviewFullscreen((v) => !v)}
+                  title={previewFullscreen ? 'Minimise preview' : 'Expand to full screen'}
+                  aria-label={previewFullscreen ? 'Minimise preview' : 'Expand to full screen'}
+                >
+                  {previewFullscreen ? (
+                    /* compress / minimise icon */
+                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                      <polyline points="4 14 10 14 10 20"/><polyline points="20 10 14 10 14 4"/>
+                      <line x1="10" y1="14" x2="3" y2="21"/><line x1="21" y1="3" x2="14" y2="10"/>
+                    </svg>
+                  ) : (
+                    /* expand / fullscreen icon */
+                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                      <polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/>
+                      <line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/>
+                    </svg>
+                  )}
                 </button>
               </div>
             </div>
@@ -1626,7 +1649,7 @@ function DailyTrackerPage({ onBack }) {
             )}
 
             {headers.length > 0 ? (
-              <div className="tableWrapper dataPreviewScrollArea">
+              <div className={`tableWrapper${previewFullscreen ? ' dataPreviewFullscreenArea' : ' dataPreviewScrollArea'}`}>
                 <table>
                   <thead>
                     <tr>

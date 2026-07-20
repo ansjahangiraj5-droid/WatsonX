@@ -556,6 +556,57 @@ tr:nth-child(even) td { background: rgba(248, 250, 252, 0.85); }
 .commentCell { min-width: 160px; white-space: pre-wrap; }
 .commentBox  { min-width: 200px; display: grid; gap: 10px; }
 
+/* ── fullscreen / icon toggle button ── */
+.iconButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border: 0;
+  border-radius: 10px;
+  background: rgba(99, 102, 241, 0.12);
+  color: #4338ca;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 0.15s, color 0.15s;
+}
+
+.iconButton:hover {
+  background: rgba(99, 102, 241, 0.22);
+  color: #3730a3;
+}
+
+.fullscreenToggleBtn {
+  border: 1px solid rgba(99, 102, 241, 0.28);
+}
+
+/* ── preview section: fullscreen overlay ── */
+.previewFullscreen {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  border-radius: 0 !important;
+  margin: 0 !important;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  padding: clamp(16px, 2vw, 32px) !important;
+  /* keep the card's own background so it looks contained */
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.99), rgba(241, 245, 249, 0.99)) !important;
+}
+
+/* when fullscreen, let the table fill all available vertical space */
+.dataPreviewFullscreenArea {
+  flex: 1 1 auto;
+  overflow: auto;
+  max-height: none;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 18px;
+  margin-top: 8px;
+  -webkit-overflow-scrolling: touch;
+}
+
 .saveCommentButton {
   padding: 7px 14px;
   font-size: 0.84rem;
