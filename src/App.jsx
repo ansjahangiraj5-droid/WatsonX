@@ -613,21 +613,6 @@ function App() {
     }
   };
 
-  const handleExportDashboard = () => {
-    const worksheetData = [
-      ['Dashboard Section', 'Label', 'Value'],
-      ...assignmentGroupBreakdown.map((item) => ['Assignment group workload', item.assignmentGroup, item.total]),
-      ...resolutionDurationBreakdown.map((item) => ['Resolution time vs SLA', item.number, item.unit === 'hours' ? `${item.value.toFixed(1)} hours` : `${item.value} days`]),
-      ...assigneeBreakdown.map((item) => ['Assigned to distribution', item.assignedTo, item.total]),
-      ...recentIncidentTrend.map((item) => ['Recent ticket creation', item.date, item.total])
-    ];
-
-    const workbook = XLSX.utils.book_new();
-    const worksheet = XLSX.utils.aoa_to_sheet(worksheetData);
-    XLSX.utils.book_append_sheet(workbook, worksheet, 'Dashboard Export');
-    XLSX.writeFile(workbook, 'ticket-dashboard-export.xlsx');
-  };
-
   return (
     <main className="page">
       <section className="appShell">
@@ -737,9 +722,6 @@ function App() {
                 </button>
                 <button type="button" className="actionButton ghostButton" onClick={handleClear}>
                   Clear
-                </button>
-                <button type="button" className="actionButton exportButton" onClick={handleExportDashboard}>
-                  Download dashboard file
                 </button>
               </div>
             </div>
