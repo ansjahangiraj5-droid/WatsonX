@@ -427,17 +427,42 @@ function HomePage({ onNavigate }) {
    BREACH ANALYSIS PAGE
 ═══════════════════════════════════════════════════════════════════════════ */
 
+const breachStorageKey = 'watsonx-breach-analysis-state';
+
+function readBreachStoredState() {
+  if (typeof window === 'undefined') return null;
+  const saved = window.sessionStorage.getItem(breachStorageKey);
+  if (!saved) return null;
+  try { return JSON.parse(saved); } catch { return null; }
+}
+
 function BreachAnalysisPage({ onBack }) {
   const countFileRef = useRef(null);
   const breachFileRef = useRef(null);
 
-  const [countFileName, setCountFileName] = useState('');
-  const [countError, setCountError] = useState('');
-  const [priorityCounts, setPriorityCounts] = useState(null); // { 1:n, 2:n, ... }
+  const initialBreachState = useMemo(() => readBreachStoredState(), []);
 
-  const [breachFileName, setBreachFileName] = useState('');
+  const [countFileName, setCountFileName] = useState(initialBreachState?.countFileName || '');
+  const [countError, setCountError] = useState('');
+  const [priorityCounts, setPriorityCounts] = useState(initialBreachState?.priorityCounts || null);
+
+  const [breachFileName, setBreachFileName] = useState(initialBreachState?.breachFileName || '');
   const [breachError, setBreachError] = useState('');
-  const [breachCounts, setBreachCounts] = useState(null); // { 1:n, 2:n, ... }
+  const [breachCounts, setBreachCounts] = useState(initialBreachState?.breachCounts || null);
+
+  /* ── persist to session storage whenever data changes ── */
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (!priorityCounts && !breachCounts) {
+      window.sessionStorage.removeItem(breachStorageKey);
+      return;
+    }
+    window.sessionStorage.setItem(
+      breachStorageKey,
+      JSON.stringify({ countFileName, priorityCounts, breachFileName, breachCounts })
+    );
+  }, [countFileName, priorityCounts, breachFileName, breachCounts]);
 
   /* ── upload handlers ── */
 
@@ -445,9 +470,7 @@ function BreachAnalysisPage({ onBack }) {
     const file = event.target.files?.[0];
     event.target.value = '';
 
-    if (!file) {
-      return;
-    }
+    if (!file) return;
 
     const hasExcelExtension = /\.(xlsx|xls)$/i.test(file.name);
     const hasAllowedMimeType = !file.type || allowedExcelTypes.has(file.type);
@@ -480,13 +503,18 @@ function BreachAnalysisPage({ onBack }) {
     }
   };
 
+  const handleClearCount = () => {
+    setCountFileName('');
+    setCountError('');
+    setPriorityCounts(null);
+    if (countFileRef.current) countFileRef.current.value = '';
+  };
+
   const handleBreachUpload = async (event) => {
     const file = event.target.files?.[0];
     event.target.value = '';
 
-    if (!file) {
-      return;
-    }
+    if (!file) return;
 
     const hasExcelExtension = /\.(xlsx|xls)$/i.test(file.name);
     const hasAllowedMimeType = !file.type || allowedExcelTypes.has(file.type);
@@ -517,6 +545,13 @@ function BreachAnalysisPage({ onBack }) {
       setBreachFileName('');
       setBreachCounts(null);
     }
+  };
+
+  const handleClearBreach = () => {
+    setBreachFileName('');
+    setBreachError('');
+    setBreachCounts(null);
+    if (breachFileRef.current) breachFileRef.current.value = '';
   };
 
   /* ── derived SLA table ── */
@@ -583,9 +618,16 @@ function BreachAnalysisPage({ onBack }) {
 
           {countError && <p className="bannerError" style={{ marginTop: 6 }}>{countError}</p>}
 
-          <button type="button" className="actionButton primaryButton" onClick={() => countFileRef.current?.click()}>
-            Choose file
-          </button>
+          <div className="buttonRow">
+            <button type="button" className="actionButton primaryButton" onClick={() => countFileRef.current?.click()}>
+              Choose file
+            </button>
+            {priorityCounts && (
+              <button type="button" className="actionButton ghostButton" onClick={handleClearCount}>
+                Clear
+              </button>
+            )}
+          </div>
 
           {/* priority count summary */}
           {priorityCounts && (
@@ -621,9 +663,16 @@ function BreachAnalysisPage({ onBack }) {
 
           {breachError && <p className="bannerError" style={{ marginTop: 6 }}>{breachError}</p>}
 
-          <button type="button" className="actionButton primaryButton" onClick={() => breachFileRef.current?.click()}>
-            Choose file
-          </button>
+          <div className="buttonRow">
+            <button type="button" className="actionButton primaryButton" onClick={() => breachFileRef.current?.click()}>
+              Choose file
+            </button>
+            {breachCounts && (
+              <button type="button" className="actionButton ghostButton" onClick={handleClearBreach}>
+                Clear
+              </button>
+            )}
+          </div>
 
           {/* breached count summary */}
           {breachCounts && (
