@@ -663,3 +663,208 @@ tr:nth-child(even) td {
     max-width: none;
   }
 }
+
+/* ═══════════════════════════ HOME PAGE ═══════════════════════════ */
+
+.homePage {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding-top: 60px;
+  gap: 48px;
+}
+
+.homeHero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.homeHeroBadge {
+  width: 72px;
+  height: 72px;
+  border-radius: 22px;
+  font-size: 1.1rem;
+  margin-bottom: 12px;
+}
+
+.homeCardGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(300px, 420px));
+  gap: 28px;
+  width: 100%;
+  max-width: 900px;
+}
+
+.homeModuleCard {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 14px;
+  background: linear-gradient(180deg, rgba(9, 14, 33, 0.98), rgba(24, 34, 72, 0.95));
+  border: 1px solid rgba(129, 140, 248, 0.28);
+  border-radius: 28px;
+  padding: 32px;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.18s, transform 0.18s;
+}
+
+.homeModuleCard:hover {
+  border-color: rgba(129, 140, 248, 0.72);
+  transform: translateY(-2px);
+}
+
+.homeModuleIcon {
+  width: 52px;
+  height: 52px;
+  border-radius: 16px;
+  display: grid;
+  place-items: center;
+  font-weight: 800;
+  font-size: 0.95rem;
+  color: #ffffff;
+  letter-spacing: 0.04em;
+}
+
+.homeModuleIconBlue {
+  background: linear-gradient(135deg, #22d3ee, #3b82f6);
+}
+
+.homeModuleIconPurple {
+  background: linear-gradient(135deg, #8b5cf6, #ec4899);
+}
+
+.homeModuleTitle {
+  color: #ffffff;
+  font-size: 1.25rem;
+  margin: 0;
+}
+
+.homeModuleDesc {
+  color: #94a3b8;
+  font-size: 0.93rem;
+  line-height: 1.65;
+  margin: 0;
+}
+
+.homeModuleCta {
+  color: #93c5fd;
+  font-size: 0.88rem;
+  font-weight: 700;
+  margin-top: 4px;
+}
+
+@media (max-width: 760px) {
+  .homeCardGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .homePage {
+    padding-top: 36px;
+  }
+}
+
+/* ═══════════════════════ BREACH ANALYSIS PAGE ═══════════════════════ */
+
+.baNavBar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 28px;
+  gap: 16px;
+}
+
+.baBackBtn {
+  padding: 10px 18px;
+  font-size: 0.9rem;
+}
+
+.baUploadGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 24px;
+}
+
+.baUploadCard {
+  background: linear-gradient(180deg, rgba(9, 14, 33, 0.98), rgba(24, 34, 72, 0.95));
+  border: 1px solid rgba(129, 140, 248, 0.28);
+  border-radius: 24px;
+  padding: 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.baUploadCardHeader {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+}
+
+.baUploadBadge {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  display: grid;
+  place-items: center;
+  font-weight: 800;
+  font-size: 1rem;
+  color: #ffffff;
+  flex-shrink: 0;
+}
+
+.baUploadBadgeBlue {
+  background: linear-gradient(135deg, #22d3ee, #3b82f6);
+}
+
+.baUploadBadgePurple {
+  background: linear-gradient(135deg, #8b5cf6, #ec4899);
+}
+
+.baPrioritySummary {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 14px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.baPriorityRow {
+  display: grid;
+  grid-template-columns: 40px 1fr auto;
+  align-items: center;
+  gap: 12px;
+}
+
+.baPriorityBadge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 24px;
+  border-radius: 6px;
+  font-size: 0.78rem;
+  font-weight: 800;
+  color: #ffffff;
+}
+
+.baPriority1 { background: #ef4444; }
+.baPriority2 { background: #f97316; }
+.baPriority3 { background: #eab308; }
+.baPriority4 { background: #22c55e; }
+.baPriority5 { background: #6366f1; }
+
+/* SLA table (overrides min-width for breach table) */
+.slaTable {
+  min-width: 640px;
+}
+
+@media (max-width: 860px) {
+  .baUploadGrid {
+    grid-template-columns: 1fr;
+  }
+}

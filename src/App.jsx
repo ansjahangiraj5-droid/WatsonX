@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import * as XLSX from 'xlsx';
 
+/* ─────────────────────────── shared constants ─────────────────────────── */
+
 const allowedExcelTypes = new Set([
   'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   'application/vnd.ms-excel'
@@ -18,6 +20,21 @@ const optionalFieldAliases = {
   created: ['created', 'opened', 'open date', 'date created', 'creation date', 'date opened']
 };
 
+/* ────────────────────────── SLA table definition ───────────────────────── */
+
+const SLA_ROWS = [
+  { key: 'p1_response',    label: 'Severity 1 - Response Time',    target: '20 mins',          expectedPct: 99.90, priority: 1, type: 'response'    },
+  { key: 'p1_resolution',  label: 'Severity 1 - Resolution Time',  target: '4 Hours',           expectedPct: 99.90, priority: 1, type: 'resolution'  },
+  { key: 'p2_response',    label: 'Severity 2 - Response Time',    target: '4 Hours',           expectedPct: 99.90, priority: 2, type: 'response'    },
+  { key: 'p2_resolution',  label: 'Severity 2 - Resolution Time',  target: '8 Hours',           expectedPct: 99.90, priority: 2, type: 'resolution'  },
+  { key: 'p3_response',    label: 'Severity 3 - Response Time',    target: '4 Hours',           expectedPct: 95,    priority: 3, type: 'response'    },
+  { key: 'p3_resolution',  label: 'Severity 3 - Resolution Time',  target: '3 Business days',  expectedPct: 95,    priority: 3, type: 'resolution'  },
+  { key: 'p4_response',    label: 'Severity 4 - Response Time',    target: '8 Hours',           expectedPct: 95,    priority: 4, type: 'response'    },
+  { key: 'p4_resolution',  label: 'Severity 4 - Resolution Time',  target: '6 Business days',  expectedPct: 95,    priority: 4, type: 'resolution'  },
+];
+
+/* ──────────────────────────── helper functions ─────────────────────────── */
+
 function normalizeKey(value) {
   return String(value ?? '')
     .trim()
@@ -30,7 +47,6 @@ function getCellValue(value) {
   if (value === null || value === undefined || value === '') {
     return '-';
   }
-
   return String(value);
 }
 
@@ -39,10 +55,7 @@ function formatNumber(value) {
 }
 
 function formatShortDate(value) {
-  return value.toLocaleDateString('en-US', {
-    month: 'short',
-    day: 'numeric'
-  });
+  return value.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
 function findHeaderIndex(headers, aliases) {
@@ -110,7 +123,6 @@ function calculateBusinessDays(startDate, endDate) {
     if (!isWeekend(current)) {
       total += 1;
     }
-
     current.setDate(current.getDate() + 1);
   }
 
@@ -275,7 +287,411 @@ function buildIncident(row, index, incidentConfig, commentMap = {}) {
   };
 }
 
-function App() {
+/* ──────────────────────── breach analysis helpers ──────────────────────── */
+
+/**
+ * Reads an Excel file and returns { headers, rows }.
+ */
+async function readExcelFile(file) {
+  const fileBuffer = await file.arrayBuffer();
+  const workbook = XLSX.read(fileBuffer, { type: 'array', cellDates: true });
+  const firstSheetName = workbook.SheetNames[0];
+
+  if (!firstSheetName) {
+    throw new Error('The uploaded Excel file does not contain any sheets.');
+  }
+
+  const worksheet = workbook.Sheets[firstSheetName];
+  const sheetData = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: '' });
+  const nonEmptyRows = sheetData.filter((row) => Array.isArray(row) && row.some((cell) => String(cell).trim() !== ''));
+
+  if (nonEmptyRows.length === 0) {
+    throw new Error('The uploaded Excel file is empty.');
+  }
+
+  const headers = nonEmptyRows[0].map((h, i) => String(h).trim() || `Column ${i + 1}`);
+  const rows = nonEmptyRows.slice(1);
+  return { headers, rows };
+}
+
+/**
+ * Extracts priority number (1-5) from a cell value.
+ * Handles: "1", "P1", "Priority 1", "1 - Critical", etc.
+ */
+function extractPriorityNumber(value) {
+  const str = normalizeKey(String(value ?? ''));
+  const match = str.match(/\b([1-5])\b/);
+  return match ? parseInt(match[1], 10) : null;
+}
+
+/**
+ * Count tickets per priority from Monthly Incident Count sheet.
+ * Finds the "Priority" column and tallies rows.
+ */
+function countByPriority(headers, rows) {
+  const priorityIdx = findHeaderIndex(headers, ['priority']);
+
+  if (priorityIdx === -1) {
+    return null;
+  }
+
+  const counts = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
+
+  for (const row of rows) {
+    const p = extractPriorityNumber(row[priorityIdx]);
+    if (p !== null && counts[p] !== undefined) {
+      counts[p] += 1;
+    }
+  }
+
+  return counts;
+}
+
+/**
+ * Count breached tickets per priority from Breached Sheet.
+ * Tries "Priority" column first; falls back to counting all rows per priority.
+ */
+function countBreachedByPriority(headers, rows) {
+  const priorityIdx = findHeaderIndex(headers, ['priority']);
+
+  if (priorityIdx === -1) {
+    return null;
+  }
+
+  const counts = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
+
+  for (const row of rows) {
+    const p = extractPriorityNumber(row[priorityIdx]);
+    if (p !== null && counts[p] !== undefined) {
+      counts[p] += 1;
+    }
+  }
+
+  return counts;
+}
+
+/**
+ * Compute SLA achieved % for a given priority.
+ * formula: (total - breached) / total * 100
+ */
+function computeSlaAchieved(total, breached) {
+  if (!total || total === 0) {
+    return null; // no data
+  }
+  const achieved = Math.max(total - breached, 0);
+  return (achieved / total) * 100;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   HOME PAGE
+═══════════════════════════════════════════════════════════════════════════ */
+
+function HomePage({ onNavigate }) {
+  return (
+    <main className="page homePage">
+      <div className="homeHero">
+        <div className="brandBadge homeHeroBadge">WX</div>
+        <p className="eyebrow" style={{ color: '#93c5fd', textAlign: 'center' }}>Service Operations</p>
+        <h1 style={{ textAlign: 'center', marginTop: 8 }}>Ticket Command Center</h1>
+        <p style={{ color: '#cbd5e1', textAlign: 'center', marginTop: 12, maxWidth: '52ch' }}>
+          Select a module below to get started.
+        </p>
+      </div>
+
+      <div className="homeCardGrid">
+        <button type="button" className="homeModuleCard" onClick={() => onNavigate('daily')}>
+          <div className="homeModuleIcon homeModuleIconBlue">DT</div>
+          <h2 className="homeModuleTitle">Daily Tracker</h2>
+          <p className="homeModuleDesc">
+            Upload your service-ticket Excel workbook and explore interactive charts for assignment
+            groups, assignees, resolution performance and ticket-creation trends with live filtering.
+          </p>
+          <span className="homeModuleCta">Open Daily Tracker →</span>
+        </button>
+
+        <button type="button" className="homeModuleCard" onClick={() => onNavigate('breach')}>
+          <div className="homeModuleIcon homeModuleIconPurple">BA</div>
+          <h2 className="homeModuleTitle">Breach Analysis</h2>
+          <p className="homeModuleDesc">
+            Upload your Monthly Incident Count and Breached Sheet to get a full SLA achievement
+            summary broken down by severity and SLA type.
+          </p>
+          <span className="homeModuleCta">Open Breach Analysis →</span>
+        </button>
+      </div>
+    </main>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   BREACH ANALYSIS PAGE
+═══════════════════════════════════════════════════════════════════════════ */
+
+function BreachAnalysisPage({ onBack }) {
+  const countFileRef = useRef(null);
+  const breachFileRef = useRef(null);
+
+  const [countFileName, setCountFileName] = useState('');
+  const [countError, setCountError] = useState('');
+  const [priorityCounts, setPriorityCounts] = useState(null); // { 1:n, 2:n, ... }
+
+  const [breachFileName, setBreachFileName] = useState('');
+  const [breachError, setBreachError] = useState('');
+  const [breachCounts, setBreachCounts] = useState(null); // { 1:n, 2:n, ... }
+
+  /* ── upload handlers ── */
+
+  const handleCountUpload = async (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+
+    if (!file) {
+      return;
+    }
+
+    const hasExcelExtension = /\.(xlsx|xls)$/i.test(file.name);
+    const hasAllowedMimeType = !file.type || allowedExcelTypes.has(file.type);
+
+    if (!hasExcelExtension || !hasAllowedMimeType) {
+      setCountError('Only Excel files (.xlsx or .xls) are allowed.');
+      setCountFileName('');
+      setPriorityCounts(null);
+      return;
+    }
+
+    try {
+      const { headers, rows } = await readExcelFile(file);
+      const counts = countByPriority(headers, rows);
+
+      if (!counts) {
+        setCountError('Could not find a "Priority" column in this file. Please verify the column header.');
+        setCountFileName(file.name);
+        setPriorityCounts(null);
+        return;
+      }
+
+      setCountFileName(file.name);
+      setCountError('');
+      setPriorityCounts(counts);
+    } catch (err) {
+      setCountError(err.message || 'Unable to read the file.');
+      setCountFileName('');
+      setPriorityCounts(null);
+    }
+  };
+
+  const handleBreachUpload = async (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+
+    if (!file) {
+      return;
+    }
+
+    const hasExcelExtension = /\.(xlsx|xls)$/i.test(file.name);
+    const hasAllowedMimeType = !file.type || allowedExcelTypes.has(file.type);
+
+    if (!hasExcelExtension || !hasAllowedMimeType) {
+      setBreachError('Only Excel files (.xlsx or .xls) are allowed.');
+      setBreachFileName('');
+      setBreachCounts(null);
+      return;
+    }
+
+    try {
+      const { headers, rows } = await readExcelFile(file);
+      const counts = countBreachedByPriority(headers, rows);
+
+      if (!counts) {
+        setBreachError('Could not find a "Priority" column in this file. Please verify the column header.');
+        setBreachFileName(file.name);
+        setBreachCounts(null);
+        return;
+      }
+
+      setBreachFileName(file.name);
+      setBreachError('');
+      setBreachCounts(counts);
+    } catch (err) {
+      setBreachError(err.message || 'Unable to read the file.');
+      setBreachFileName('');
+      setBreachCounts(null);
+    }
+  };
+
+  /* ── derived SLA table ── */
+
+  const slaTableRows = useMemo(() => {
+    return SLA_ROWS.map((row) => {
+      const total = priorityCounts ? (priorityCounts[row.priority] ?? 0) : null;
+      const breached = breachCounts ? (breachCounts[row.priority] ?? 0) : null;
+      const achievedPct = total !== null && breached !== null ? computeSlaAchieved(total, breached) : null;
+
+      return { ...row, total, breached, achievedPct };
+    });
+  }, [priorityCounts, breachCounts]);
+
+  /* ── render ── */
+
+  return (
+    <main className="page">
+      {/* top nav */}
+      <div className="baNavBar">
+        <button type="button" className="actionButton ghostButton baBackBtn" onClick={onBack}>
+          ← Back to Home
+        </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <div className="brandBadge" style={{ width: 40, height: 40, borderRadius: 12, fontSize: '0.78rem' }}>WX</div>
+          <div>
+            <p className="eyebrow" style={{ color: '#93c5fd' }}>Breach Analysis</p>
+            <h2 style={{ color: '#ffffff', fontSize: '1.1rem' }}>SLA Achievement Report</h2>
+          </div>
+        </div>
+      </div>
+
+      {/* upload section */}
+      <section className="baUploadGrid">
+        {/* Card 1 – Monthly Incident Count */}
+        <div className="baUploadCard">
+          <div className="baUploadCardHeader">
+            <span className="baUploadBadge baUploadBadgeBlue">1</span>
+            <div>
+              <strong style={{ color: '#ffffff' }}>Monthly Incident Count</strong>
+              <p style={{ color: '#94a3b8', fontSize: '0.88rem', marginTop: 4 }}>
+                Used to calculate the total number of tickets per priority.
+              </p>
+            </div>
+          </div>
+
+          <input ref={countFileRef} type="file" accept=".xlsx,.xls" style={{ display: 'none' }} onChange={handleCountUpload} />
+          <div style={{ color: '#cbd5e1', fontSize: '0.88rem', minHeight: 20 }}>
+            {countFileName ? `📄 ${countFileName}` : 'No file selected'}
+          </div>
+
+          {countError && <p className="bannerError" style={{ marginTop: 6 }}>{countError}</p>}
+
+          <button type="button" className="actionButton primaryButton" onClick={() => countFileRef.current?.click()}>
+            Choose file
+          </button>
+
+          {/* priority count summary */}
+          {priorityCounts && (
+            <div className="baPrioritySummary">
+              <p style={{ color: '#93c5fd', fontWeight: 700, marginBottom: 8 }}>Ticket count by priority</p>
+              {[1, 2, 3, 4, 5].map((p) => (
+                <div key={p} className="baPriorityRow">
+                  <span className={`baPriorityBadge baPriority${p}`}>P{p}</span>
+                  <span style={{ color: '#e2e8f0' }}>Total no of P{p}</span>
+                  <span style={{ color: '#ffffff', fontWeight: 700 }}>{priorityCounts[p]}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Card 2 – Breached Sheet */}
+        <div className="baUploadCard">
+          <div className="baUploadCardHeader">
+            <span className="baUploadBadge baUploadBadgePurple">2</span>
+            <div>
+              <strong style={{ color: '#ffffff' }}>Breached Sheet</strong>
+              <p style={{ color: '#94a3b8', fontSize: '0.88rem', marginTop: 4 }}>
+                Contains the breached tickets — used to compute the SLA achieved %.
+              </p>
+            </div>
+          </div>
+
+          <input ref={breachFileRef} type="file" accept=".xlsx,.xls" style={{ display: 'none' }} onChange={handleBreachUpload} />
+          <div style={{ color: '#cbd5e1', fontSize: '0.88rem', minHeight: 20 }}>
+            {breachFileName ? `📄 ${breachFileName}` : 'No file selected'}
+          </div>
+
+          {breachError && <p className="bannerError" style={{ marginTop: 6 }}>{breachError}</p>}
+
+          <button type="button" className="actionButton primaryButton" onClick={() => breachFileRef.current?.click()}>
+            Choose file
+          </button>
+
+          {/* breached count summary */}
+          {breachCounts && (
+            <div className="baPrioritySummary">
+              <p style={{ color: '#c4b5fd', fontWeight: 700, marginBottom: 8 }}>Breached count by priority</p>
+              {[1, 2, 3, 4, 5].map((p) => (
+                <div key={p} className="baPriorityRow">
+                  <span className={`baPriorityBadge baPriority${p}`}>P{p}</span>
+                  <span style={{ color: '#e2e8f0' }}>Breached P{p}</span>
+                  <span style={{ color: '#ffffff', fontWeight: 700 }}>{breachCounts[p]}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </section>
+
+      {/* SLA table – shows when at least one file is loaded */}
+      {(priorityCounts || breachCounts) && (
+        <section className="tableCard" style={{ marginTop: 24, borderRadius: 24, padding: 28 }}>
+          <div style={{ marginBottom: 20 }}>
+            <h2 style={{ color: '#0f172a' }}>SLA Achievement Summary</h2>
+            <p style={{ color: '#475569', fontSize: '0.9rem', marginTop: 4 }}>
+              Formula: SLA Achieved % = (Total − Breached) ÷ Total × 100
+              {(!priorityCounts || !breachCounts) && (
+                <span style={{ color: '#d97706', marginLeft: 8 }}>
+                  (Upload both files to see full results)
+                </span>
+              )}
+            </p>
+          </div>
+
+          <div className="tableWrapper">
+            <table className="slaTable">
+              <thead>
+                <tr>
+                  <th>SLA Definition</th>
+                  <th>Target</th>
+                  <th>Expected SLA %</th>
+                  <th>SLA Achieved %</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {slaTableRows.map((row) => {
+                  const achievedDisplay = row.achievedPct === null
+                    ? '—'
+                    : `${row.achievedPct.toFixed(2)}%`;
+
+                  const metTarget = row.achievedPct !== null && row.achievedPct >= row.expectedPct;
+                  const statusLabel = row.achievedPct === null ? '—' : metTarget ? 'Met' : 'Missed';
+                  const statusClass = row.achievedPct === null ? '' : metTarget ? 'statusGood' : 'statusBad';
+
+                  return (
+                    <tr key={row.key}>
+                      <td style={{ fontWeight: 600 }}>{row.label}</td>
+                      <td>{row.target}</td>
+                      <td>{row.expectedPct}%</td>
+                      <td style={{ fontWeight: 700 }}>{achievedDisplay}</td>
+                      <td>
+                        {row.achievedPct !== null ? (
+                          <span className={`statusBadge ${statusClass}`}>{statusLabel}</span>
+                        ) : '—'}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
+    </main>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   DAILY TRACKER PAGE  (original App — zero logic changes)
+═══════════════════════════════════════════════════════════════════════════ */
+
+function DailyTrackerPage({ onBack }) {
   const fileInputRef = useRef(null);
   const dashboardExportRef = useRef(null);
   const initialState = useMemo(() => readStoredState(), []);
@@ -615,6 +1031,20 @@ function App() {
 
   return (
     <main className="page">
+      {/* back button bar */}
+      <div className="baNavBar" style={{ marginBottom: 20 }}>
+        <button type="button" className="actionButton ghostButton baBackBtn" onClick={onBack}>
+          ← Back to Home
+        </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <div className="brandBadge" style={{ width: 40, height: 40, borderRadius: 12, fontSize: '0.78rem' }}>WX</div>
+          <div>
+            <p className="eyebrow" style={{ color: '#93c5fd' }}>Daily Tracker</p>
+            <h2 style={{ color: '#ffffff', fontSize: '1.1rem' }}>Ticket Command Center</h2>
+          </div>
+        </div>
+      </div>
+
       <section className="appShell">
         <aside className="sidePanel">
           <div className="brandBlock">
@@ -958,6 +1388,24 @@ function App() {
       </section>
     </main>
   );
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   ROOT APP — routing shell
+═══════════════════════════════════════════════════════════════════════════ */
+
+function App() {
+  const [page, setPage] = useState('home'); // 'home' | 'daily' | 'breach'
+
+  if (page === 'daily') {
+    return <DailyTrackerPage onBack={() => setPage('home')} />;
+  }
+
+  if (page === 'breach') {
+    return <BreachAnalysisPage onBack={() => setPage('home')} />;
+  }
+
+  return <HomePage onNavigate={(target) => setPage(target)} />;
 }
 
 export default App;
