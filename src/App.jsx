@@ -812,6 +812,21 @@ function DailyTrackerPage({ onBack }) {
   const [selectedDateRange, setSelectedDateRange] = useState(initialState?.selectedDateRange || 'ALL Time');
   const [commentsByNumber, setCommentsByNumber] = useState(initialState?.commentsByNumber || {});
   const [editingComments, setEditingComments] = useState({});
+  // toast: { id, ticketNumber }
+  const [savedToast, setSavedToast] = useState(null);
+  const toastTimerRef = useRef(null);
+  // custom columns: [{ id, label }]
+  const [customColumns, setCustomColumns] = useState(initialState?.customColumns || []);
+  // custom column values: { [ticketNumber]: { [colId]: string } }
+  const [customColValues, setCustomColValues] = useState(initialState?.customColValues || {});
+  // which custom cells are being edited: { [ticketNumber-colId]: bool }
+  const [editingCustomCells, setEditingCustomCells] = useState({});
+  // custom cell saved toast
+  const [customCellToast, setCustomCellToast] = useState(null);
+  const customCellToastTimerRef = useRef(null);
+  // add-column dialog
+  const [showAddColDialog, setShowAddColDialog] = useState(false);
+  const [newColLabel, setNewColLabel] = useState('');
 
   const resetData = (message = '', nextFileName = '') => {
     setFileName(nextFileName);
@@ -824,6 +839,9 @@ function DailyTrackerPage({ onBack }) {
     setSelectedDateRange('ALL Time');
     setCommentsByNumber({});
     setEditingComments({});
+    setCustomColumns([]);
+    setCustomColValues({});
+    setEditingCustomCells({});
     setError(message);
 
     if (typeof window !== 'undefined') {
@@ -869,10 +887,12 @@ function DailyTrackerPage({ onBack }) {
         selectedAssignee,
         selectedBreachStatus,
         selectedDateRange,
-        commentsByNumber
+        commentsByNumber,
+        customColumns,
+        customColValues
       })
     );
-  }, [commentsByNumber, fileName, headers, rows, selectedAssignmentGroup, selectedAssignee, selectedBreachStatus, selectedDateRange, sheetName]);
+  }, [commentsByNumber, customColValues, customColumns, fileName, headers, rows, selectedAssignmentGroup, selectedAssignee, selectedBreachStatus, selectedDateRange, sheetName]);
 
   const assignmentGroups = useMemo(() => {
     return [allOption, ...Array.from(new Set(incidents.map((item) => item.assignmentGroup).filter((item) => item !== '-'))).sort()];
@@ -1088,10 +1108,19 @@ function DailyTrackerPage({ onBack }) {
   };
 
   const toggleCommentEditor = (ticketNumber) => {
-    setEditingComments((currentState) => ({
-      ...currentState,
-      [ticketNumber]: !currentState[ticketNumber]
-    }));
+    setEditingComments((currentState) => {
+      const nowOpen = !currentState[ticketNumber];
+      if (nowOpen) {
+        // append a newline when re-opening if there is already content
+        setCommentsByNumber((prev) => {
+          const existing = prev[ticketNumber] || '';
+          return existing && !existing.endsWith('\n')
+            ? { ...prev, [ticketNumber]: existing + '\n' }
+            : prev;
+        });
+      }
+      return { ...currentState, [ticketNumber]: nowOpen };
+    });
   };
 
   const handleCommentChange = (ticketNumber, value) => {
@@ -1101,15 +1130,70 @@ function DailyTrackerPage({ onBack }) {
     }));
   };
 
+  const handleSaveComment = (ticketNumber) => {
+    // close the editor
+    setEditingComments((currentState) => ({ ...currentState, [ticketNumber]: false }));
+    // show toast
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    setSavedToast(ticketNumber);
+    toastTimerRef.current = setTimeout(() => setSavedToast(null), 2200);
+  };
+
+  // ── custom columns ────────────────────────────────────────
+  const handleAddColumn = () => {
+    const label = newColLabel.trim();
+    if (!label) return;
+    const id = `cc_${Date.now()}`;
+    setCustomColumns((prev) => [...prev, { id, label }]);
+    setNewColLabel('');
+    setShowAddColDialog(false);
+  };
+
+  const handleRemoveColumn = (colId) => {
+    setCustomColumns((prev) => prev.filter((c) => c.id !== colId));
+    setCustomColValues((prev) => {
+      const next = { ...prev };
+      Object.keys(next).forEach((num) => {
+        const copy = { ...next[num] };
+        delete copy[colId];
+        next[num] = copy;
+      });
+      return next;
+    });
+  };
+
+  const cellKey = (ticketNumber, colId) => `${ticketNumber}__${colId}`;
+
+  const toggleCustomCell = (ticketNumber, colId) => {
+    const key = cellKey(ticketNumber, colId);
+    setEditingCustomCells((prev) => ({ ...prev, [key]: !prev[key] }));
+  };
+
+  const handleCustomCellChange = (ticketNumber, colId, value) => {
+    setCustomColValues((prev) => ({
+      ...prev,
+      [ticketNumber]: { ...(prev[ticketNumber] || {}), [colId]: value }
+    }));
+  };
+
+  const handleSaveCustomCell = (ticketNumber, colId) => {
+    const key = cellKey(ticketNumber, colId);
+    setEditingCustomCells((prev) => ({ ...prev, [key]: false }));
+    if (customCellToastTimerRef.current) clearTimeout(customCellToastTimerRef.current);
+    setCustomCellToast(key);
+    customCellToastTimerRef.current = setTimeout(() => setCustomCellToast(null), 2200);
+  };
+
   const handleExportTicketData = async () => {
-    const extraHeaders = ['SLA Duration', 'SLA Status', 'Comments'];
+    const extraHeaders = ['SLA Duration', 'SLA Status', 'Comments', ...customColumns.map((c) => c.label)];
     const worksheetData = [
       [...headers, ...extraHeaders],
       ...filteredIncidents.map((incident) => [
         ...headers.map((_, i) => getCellValue(incident.originalRow[i])),
         formatDuration(incident),
         incident.withinTarget ? 'Within target' : 'Breached',
-        incident.comment || ''
+        incident.comment || '',
+        ...customColumns.map((c) => (customColValues[incident.number]?.[c.id] || ''))
       ])
     ];
     const workbook = XLSX.utils.book_new();
@@ -1481,11 +1565,65 @@ function DailyTrackerPage({ onBack }) {
               </div>
               <div className="pillButtonGroup">
                 <span className="pill neutral">First worksheet</span>
+                <button
+                  type="button"
+                  className="actionButton addColButton"
+                  onClick={() => { setShowAddColDialog(true); setNewColLabel(''); }}
+                  disabled={headers.length === 0}
+                  title="Add a custom column to this table"
+                >
+                  + Add Column
+                </button>
                 <button type="button" className="actionButton exportButton" onClick={handleExportTicketData} disabled={filteredIncidents.length === 0}>
                   Download Excel
                 </button>
               </div>
             </div>
+
+            {/* ── Add Column dialog ── */}
+            {showAddColDialog && (
+              <div className="addColDialog">
+                <div className="addColDialogInner">
+                  <p className="addColDialogTitle">New column name</p>
+                  <input
+                    className="addColInput"
+                    type="text"
+                    placeholder="e.g. Change Request, Transport Number…"
+                    value={newColLabel}
+                    onChange={(e) => setNewColLabel(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter') handleAddColumn(); if (e.key === 'Escape') setShowAddColDialog(false); }}
+                    autoFocus
+                  />
+                  <div className="addColDialogButtons">
+                    <button type="button" className="actionButton primaryButton" onClick={handleAddColumn} disabled={!newColLabel.trim()}>
+                      Add
+                    </button>
+                    <button type="button" className="actionButton ghostButton addColCancelBtn" onClick={() => setShowAddColDialog(false)}>
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* ── custom column chips ── */}
+            {customColumns.length > 0 && (
+              <div className="customColChips">
+                {customColumns.map((col) => (
+                  <span key={col.id} className="customColChip">
+                    {col.label}
+                    <button
+                      type="button"
+                      className="customColChipRemove"
+                      onClick={() => handleRemoveColumn(col.id)}
+                      title={`Remove column "${col.label}"`}
+                    >
+                      ×
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
 
             {headers.length > 0 ? (
               <div className="tableWrapper dataPreviewScrollArea">
@@ -1499,6 +1637,9 @@ function DailyTrackerPage({ onBack }) {
                       <th>SLA Status</th>
                       <th>Recent Update</th>
                       <th>Comments</th>
+                      {customColumns.map((col) => (
+                        <th key={col.id}>{col.label}</th>
+                      ))}
                     </tr>
                   </thead>
                   <tbody>
@@ -1521,17 +1662,82 @@ function DailyTrackerPage({ onBack }) {
                               className="actionButton smallButton"
                               onClick={() => toggleCommentEditor(incident.number)}
                             >
-                              {editingComments[incident.number] ? 'Hide comments' : 'Add comments'}
+                              {editingComments[incident.number] ? 'Hide' : 'Add comments'}
                             </button>
-                            <textarea
-                              className="commentInput"
-                              value={commentsByNumber[incident.number] || ''}
-                              onChange={(event) => handleCommentChange(incident.number, event.target.value)}
-                              disabled={!editingComments[incident.number]}
-                              placeholder="Add recent ticket update"
-                            />
+                            {editingComments[incident.number] && (
+                              <>
+                                <textarea
+                                  className="commentInput"
+                                  value={commentsByNumber[incident.number] || ''}
+                                  onChange={(event) => handleCommentChange(incident.number, event.target.value)}
+                                  onKeyDown={(event) => {
+                                    if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
+                                      event.preventDefault();
+                                      handleSaveComment(incident.number);
+                                    }
+                                  }}
+                                  placeholder="Add recent ticket update&#10;Ctrl+Enter to save"
+                                  autoFocus
+                                />
+                                <button
+                                  type="button"
+                                  className="actionButton saveCommentButton"
+                                  onClick={() => handleSaveComment(incident.number)}
+                                >
+                                  Save comment
+                                </button>
+                              </>
+                            )}
+                            {savedToast === incident.number && (
+                              <span className="commentSavedToast">✓ Comment saved</span>
+                            )}
                           </div>
                         </td>
+                        {customColumns.map((col) => {
+                          const key = cellKey(incident.number, col.id);
+                          const isEditing = !!editingCustomCells[key];
+                          const value = customColValues[incident.number]?.[col.id] || '';
+                          return (
+                            <td key={col.id}>
+                              <div className="commentBox">
+                                {isEditing ? (
+                                  <>
+                                    <input
+                                      className="customCellInput"
+                                      type="text"
+                                      value={value}
+                                      onChange={(e) => handleCustomCellChange(incident.number, col.id, e.target.value)}
+                                      onKeyDown={(e) => {
+                                        if (e.key === 'Enter') { e.preventDefault(); handleSaveCustomCell(incident.number, col.id); }
+                                        if (e.key === 'Escape') toggleCustomCell(incident.number, col.id);
+                                      }}
+                                      placeholder={`Enter ${col.label}`}
+                                      autoFocus
+                                    />
+                                    <button
+                                      type="button"
+                                      className="actionButton saveCommentButton"
+                                      onClick={() => handleSaveCustomCell(incident.number, col.id)}
+                                    >
+                                      Save
+                                    </button>
+                                  </>
+                                ) : (
+                                  <span
+                                    className="customCellValue"
+                                    onClick={() => toggleCustomCell(incident.number, col.id)}
+                                    title="Click to edit"
+                                  >
+                                    {value || <span className="customCellPlaceholder">—  click to add</span>}
+                                  </span>
+                                )}
+                                {customCellToast === key && (
+                                  <span className="commentSavedToast">✓ Saved</span>
+                                )}
+                              </div>
+                            </td>
+                          );
+                        })}
                       </tr>
                     ))}
                   </tbody>
