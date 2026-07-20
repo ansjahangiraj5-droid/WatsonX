@@ -531,6 +531,19 @@ function BreachAnalysisPage({ onBack }) {
     });
   }, [priorityCounts, breachCounts]);
 
+  const handleExportSlaTable = () => {
+    const headers = ['SLA Definition', 'Target', 'Expected SLA %', 'SLA Achieved %'];
+    const dataRows = slaTableRows.map((row) => [
+      row.label,
+      row.target,
+      `${row.expectedPct}%`,
+      row.achievedPct === null ? '—' : `${row.achievedPct.toFixed(2)}%`
+    ]);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet([headers, ...dataRows]), 'SLA Achievement');
+    XLSX.writeFile(workbook, 'sla-achievement-summary.xlsx');
+  };
+
   /* ── render ── */
 
   return (
@@ -631,16 +644,21 @@ function BreachAnalysisPage({ onBack }) {
       {/* SLA table – shows when at least one file is loaded */}
       {(priorityCounts || breachCounts) && (
         <section className="tableCard" style={{ marginTop: 24, borderRadius: 24, padding: 28 }}>
-          <div style={{ marginBottom: 20 }}>
-            <h2 style={{ color: '#0f172a' }}>SLA Achievement Summary</h2>
-            <p style={{ color: '#475569', fontSize: '0.9rem', marginTop: 4 }}>
-              Formula: SLA Achieved % = (Total − Breached) ÷ Total × 100
-              {(!priorityCounts || !breachCounts) && (
-                <span style={{ color: '#d97706', marginLeft: 8 }}>
-                  (Upload both files to see full results)
-                </span>
-              )}
-            </p>
+          <div className="tableHeader tableActions fixedHeader">
+            <div>
+              <h2 style={{ color: '#0f172a' }}>SLA Achievement Summary</h2>
+              <p style={{ color: '#475569', fontSize: '0.9rem', marginTop: 4 }}>
+                Formula: SLA Achieved % = (Total − Breached) ÷ Total × 100
+                {(!priorityCounts || !breachCounts) && (
+                  <span style={{ color: '#d97706', marginLeft: 8 }}>
+                    (Upload both files to see full results)
+                  </span>
+                )}
+              </p>
+            </div>
+            <button type="button" className="actionButton exportButton" onClick={handleExportSlaTable}>
+              Download Excel
+            </button>
           </div>
 
           <div className="tableWrapper">
@@ -651,7 +669,6 @@ function BreachAnalysisPage({ onBack }) {
                   <th>Target</th>
                   <th>Expected SLA %</th>
                   <th>SLA Achieved %</th>
-                  <th>Status</th>
                 </tr>
               </thead>
               <tbody>
@@ -660,21 +677,12 @@ function BreachAnalysisPage({ onBack }) {
                     ? '—'
                     : `${row.achievedPct.toFixed(2)}%`;
 
-                  const metTarget = row.achievedPct !== null && row.achievedPct >= row.expectedPct;
-                  const statusLabel = row.achievedPct === null ? '—' : metTarget ? 'Met' : 'Missed';
-                  const statusClass = row.achievedPct === null ? '' : metTarget ? 'statusGood' : 'statusBad';
-
                   return (
                     <tr key={row.key}>
                       <td style={{ fontWeight: 600 }}>{row.label}</td>
                       <td>{row.target}</td>
                       <td>{row.expectedPct}%</td>
                       <td style={{ fontWeight: 700 }}>{achievedDisplay}</td>
-                      <td>
-                        {row.achievedPct !== null ? (
-                          <span className={`statusBadge ${statusClass}`}>{statusLabel}</span>
-                        ) : '—'}
-                      </td>
                     </tr>
                   );
                 })}
