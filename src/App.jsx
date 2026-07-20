@@ -1260,6 +1260,57 @@ function DailyTrackerPage({ onBack }) {
                   Clear
                 </button>
               </div>
+
+              {/* ── inline filters shown only on mobile ── */}
+              <div className="mobileFilters">
+                <div className="mobileFilterRow">
+                  <label htmlFor="m-assignment-group-filter" className="sideLabel">Assignment group</label>
+                  <select
+                    id="m-assignment-group-filter"
+                    className="filterSelect"
+                    value={selectedAssignmentGroup}
+                    onChange={(e) => setSelectedAssignmentGroup(e.target.value)}
+                    disabled={assignmentGroups.length === 1}
+                  >
+                    {assignmentGroups.map((g) => <option key={g} value={g}>{g}</option>)}
+                  </select>
+                </div>
+                <div className="mobileFilterRow">
+                  <label htmlFor="m-assignee-filter" className="sideLabel">Assigned to</label>
+                  <select
+                    id="m-assignee-filter"
+                    className="filterSelect"
+                    value={selectedAssignee}
+                    onChange={(e) => setSelectedAssignee(e.target.value)}
+                    disabled={assignees.length === 1}
+                  >
+                    {assignees.map((u) => <option key={u} value={u}>{u}</option>)}
+                  </select>
+                </div>
+                <div className="mobileFilterRow">
+                  <label htmlFor="m-breach-filter" className="sideLabel">Has breached</label>
+                  <select
+                    id="m-breach-filter"
+                    className="filterSelect"
+                    value={selectedBreachStatus}
+                    onChange={(e) => setSelectedBreachStatus(e.target.value)}
+                    disabled={breachStatuses.length === 1}
+                  >
+                    {breachStatuses.map((s) => <option key={s} value={s}>{s}</option>)}
+                  </select>
+                </div>
+                <div className="mobileFilterRow">
+                  <label htmlFor="m-date-range-filter" className="sideLabel">Created date range</label>
+                  <select
+                    id="m-date-range-filter"
+                    className="filterSelect"
+                    value={selectedDateRange}
+                    onChange={(e) => setSelectedDateRange(e.target.value)}
+                  >
+                    {dateRangeOptions.map((o) => <option key={o} value={o}>{o}</option>)}
+                  </select>
+                </div>
+              </div>
             </div>
           </section>
 

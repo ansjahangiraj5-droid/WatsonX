@@ -601,11 +601,24 @@ tr:nth-child(even) td {
   font-weight: 600;
 }
 
+/* ── mobile filter block: hidden by default, shown only on small screens ── */
+.mobileFilters {
+  display: none;
+}
+
+.mobileFilterRow {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* ─────────────── 1280px: sidebar stacks below dashboard ─────────────── */
 @media (max-width: 1280px) {
   .appShell {
     grid-template-columns: 1fr;
   }
 
+  /* keep sidebar below on tablet — it's still useful there */
   .sidePanel {
     order: 2;
   }
@@ -615,6 +628,7 @@ tr:nth-child(even) td {
   }
 }
 
+/* ─────────────── 1040px: two-column panels collapse to one ─────────────── */
 @media (max-width: 1040px) {
   .hero,
   .insightsGrid,
@@ -623,44 +637,166 @@ tr:nth-child(even) td {
   }
 
   .chartRow {
-    grid-template-columns: minmax(140px, 220px) minmax(0, 1fr) 52px;
+    grid-template-columns: minmax(140px, 200px) minmax(0, 1fr) 52px;
   }
 }
 
+/* ─────────────── 760px: phone layout ─────────────── */
 @media (max-width: 760px) {
   .page {
-    padding: 16px;
+    padding: 12px;
   }
 
   h1 {
+    font-size: 1.7rem;
+    line-height: 1.15;
+  }
+
+  /* hide the desktop sidebar entirely on phone */
+  .sidePanel {
+    display: none;
+  }
+
+  /* show inline filters inside the upload card */
+  .mobileFilters {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    margin-top: 8px;
+    padding-top: 14px;
+    border-top: 1px solid rgba(147, 197, 253, 0.2);
+  }
+
+  /* hero: stack title above upload card */
+  .hero {
+    grid-template-columns: 1fr;
+    gap: 14px;
+  }
+
+  .heroGradient {
+    padding: 20px 16px;
+  }
+
+  /* metric cards: 2 per row on phone */
+  .metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .metricCard {
+    min-height: 110px;
+    padding: 16px;
+  }
+
+  .metricCard strong {
     font-size: 2rem;
   }
 
-  .metrics {
+  /* insight grids: single column */
+  .insightsGrid,
+  .wideGrid {
     grid-template-columns: 1fr;
   }
 
-  .chartRow,
+  /* chart rows: stack label → bar → value vertically */
+  .chartRow {
+    grid-template-columns: 1fr;
+    gap: 6px;
+  }
+
+  .chartTrack {
+    height: 14px;
+  }
+
+  .chartValue {
+    text-align: right;
+  }
+
+  /* table header / action rows: stack vertically */
   .tableHeader,
   .tableActions,
-  .buttonRow,
   .trendHeader {
-    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+  }
+
+  .buttonRow {
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+
+  /* make export / action buttons full-width on phone */
+  .actionButton {
+    width: 100%;
+    text-align: center;
+  }
+
+  .pillButtonGroup {
     flex-direction: column;
     align-items: stretch;
   }
 
-  .chartRow {
-    gap: 10px;
-  }
-
-  .lineChart {
-    grid-template-columns: 36px minmax(0, 1fr);
-    gap: 10px;
-  }
-
   .pill {
     max-width: none;
+    text-align: center;
+  }
+
+  /* line chart: tighter axis */
+  .lineChart {
+    grid-template-columns: 32px minmax(0, 1fr);
+    gap: 8px;
+  }
+
+  /* table card padding */
+  .tableCard {
+    padding: 14px;
+  }
+
+  /* upload card padding */
+  .uploadCard {
+    padding: 16px;
+  }
+
+  /* nav bar: stack on very small screens */
+  .baNavBar {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+  }
+
+  /* breach analysis upload grid */
+  .baUploadGrid {
+    grid-template-columns: 1fr;
+  }
+
+  /* home page cards */
+  .homeCardGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .homePage {
+    padding-top: 28px;
+    gap: 28px;
+  }
+
+  .homeModuleCard {
+    padding: 22px 18px;
+  }
+}
+
+/* ─────────────── 480px: very small phones ─────────────── */
+@media (max-width: 480px) {
+  .metrics {
+    grid-template-columns: 1fr;
+  }
+
+  .metricCard {
+    min-height: 90px;
+  }
+
+  h1 {
+    font-size: 1.45rem;
   }
 }
 
