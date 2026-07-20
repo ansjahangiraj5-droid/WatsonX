@@ -1451,18 +1451,36 @@ function DailyTrackerPage({ onBack }) {
    ROOT APP — routing shell
 ═══════════════════════════════════════════════════════════════════════════ */
 
+const pageStorageKey = 'watsonx-active-page';
+
 function App() {
-  const [page, setPage] = useState('home'); // 'home' | 'daily' | 'breach'
+  const [page, setPage] = useState(() => {
+    try {
+      const saved = window.sessionStorage.getItem(pageStorageKey);
+      if (saved === 'daily' || saved === 'breach') return saved;
+    } catch {}
+    return 'home';
+  });
+
+  const navigate = (target) => {
+    try { window.sessionStorage.setItem(pageStorageKey, target); } catch {}
+    setPage(target);
+  };
+
+  const goHome = () => {
+    try { window.sessionStorage.setItem(pageStorageKey, 'home'); } catch {}
+    setPage('home');
+  };
 
   if (page === 'daily') {
-    return <DailyTrackerPage onBack={() => setPage('home')} />;
+    return <DailyTrackerPage onBack={goHome} />;
   }
 
   if (page === 'breach') {
-    return <BreachAnalysisPage onBack={() => setPage('home')} />;
+    return <BreachAnalysisPage onBack={goHome} />;
   }
 
-  return <HomePage onNavigate={(target) => setPage(target)} />;
+  return <HomePage onNavigate={navigate} />;
 }
 
 export default App;
