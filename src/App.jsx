@@ -348,8 +348,26 @@ function countByPriority(headers, rows) {
 }
 
 /**
- * Count breached tickets per priority from Breached Sheet.
- * Tries "Priority" column first; falls back to counting all rows per priority.
+ * Detect whether an SLA definition cell refers to response or resolution.
+ * Returns 'response', 'resolution', or null if unrecognisable.
+ */
+function extractSlaType(value) {
+  const str = normalizeKey(String(value ?? ''));
+  if (str.includes('resolution') || str.includes('resolve')) return 'resolution';
+  if (str.includes('response') || str.includes('respond')) return 'response';
+  return null;
+}
+
+/**
+ * Count breached tickets per priority AND per SLA type (response / resolution)
+ * from the Breached Sheet.
+ *
+ * Requires a Priority column.
+ * If an "SLA Definition" column is also present the counts are split by type;
+ * otherwise the same count is used for both response and resolution rows.
+ *
+ * Returns: { 1: { response: n, resolution: n }, 2: { … }, … }
+ * or null when no Priority column is found.
  */
 function countBreachedByPriority(headers, rows) {
   const priorityIdx = findHeaderIndex(headers, ['priority']);
@@ -358,12 +376,33 @@ function countBreachedByPriority(headers, rows) {
     return null;
   }
 
-  const counts = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
+  const slaDefIdx = findHeaderIndex(headers, ['sla definition', 'sla type', 'sla name', 'type']);
+
+  // initialise counts for P1-P5, both types
+  const counts = {};
+  for (let p = 1; p <= 5; p++) {
+    counts[p] = { response: 0, resolution: 0 };
+  }
 
   for (const row of rows) {
     const p = extractPriorityNumber(row[priorityIdx]);
-    if (p !== null && counts[p] !== undefined) {
-      counts[p] += 1;
+    if (p === null || !counts[p]) continue;
+
+    if (slaDefIdx !== -1) {
+      const slaType = extractSlaType(row[slaDefIdx]);
+      if (slaType === 'response') {
+        counts[p].response += 1;
+      } else if (slaType === 'resolution') {
+        counts[p].resolution += 1;
+      } else {
+        // SLA Definition present but not classifiable — count for both
+        counts[p].response += 1;
+        counts[p].resolution += 1;
+      }
+    } else {
+      // No SLA Definition column — apply to both types
+      counts[p].response += 1;
+      counts[p].resolution += 1;
     }
   }
 
@@ -559,7 +598,10 @@ function BreachAnalysisPage({ onBack }) {
   const slaTableRows = useMemo(() => {
     return SLA_ROWS.map((row) => {
       const total = priorityCounts ? (priorityCounts[row.priority] ?? 0) : null;
-      const breached = breachCounts ? (breachCounts[row.priority] ?? 0) : null;
+      // breachCounts[p] is now { response, resolution } — pick the right sub-type
+      const breached = breachCounts
+        ? (breachCounts[row.priority]?.[row.type] ?? 0)
+        : null;
       const achievedPct = total !== null && breached !== null ? computeSlaAchieved(total, breached) : null;
 
       return { ...row, total, breached, achievedPct };
@@ -677,12 +719,19 @@ function BreachAnalysisPage({ onBack }) {
           {/* breached count summary */}
           {breachCounts && (
             <div className="baPrioritySummary">
-              <p style={{ color: '#c4b5fd', fontWeight: 700, marginBottom: 8 }}>Breached count by priority</p>
+              <p style={{ color: '#c4b5fd', fontWeight: 700, marginBottom: 8 }}>Breached count by priority &amp; type</p>
               {[1, 2, 3, 4, 5].map((p) => (
-                <div key={p} className="baPriorityRow">
-                  <span className={`baPriorityBadge baPriority${p}`}>P{p}</span>
-                  <span style={{ color: '#e2e8f0' }}>Breached P{p}</span>
-                  <span style={{ color: '#ffffff', fontWeight: 700 }}>{breachCounts[p]}</span>
+                <div key={p} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  <div className="baPriorityRow">
+                    <span className={`baPriorityBadge baPriority${p}`}>P{p}</span>
+                    <span style={{ color: '#e2e8f0' }}>Response breached</span>
+                    <span style={{ color: '#ffffff', fontWeight: 700 }}>{breachCounts[p]?.response ?? 0}</span>
+                  </div>
+                  <div className="baPriorityRow">
+                    <span className={`baPriorityBadge baPriority${p}`} style={{ opacity: 0 }}>P{p}</span>
+                    <span style={{ color: '#e2e8f0' }}>Resolution breached</span>
+                    <span style={{ color: '#ffffff', fontWeight: 700 }}>{breachCounts[p]?.resolution ?? 0}</span>
+                  </div>
                 </div>
               ))}
             </div>
