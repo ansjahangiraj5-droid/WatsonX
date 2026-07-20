@@ -812,6 +812,8 @@ function DailyTrackerPage({ onBack }) {
   const [selectedDateRange, setSelectedDateRange] = useState(initialState?.selectedDateRange || 'ALL Time');
   const [commentsByNumber, setCommentsByNumber] = useState(initialState?.commentsByNumber || {});
   const [editingComments, setEditingComments] = useState({});
+  // draft text per ticket (only what the user is currently typing — NOT the saved history)
+  const [draftComments, setDraftComments] = useState({});
   // toast: { id, ticketNumber }
   const [savedToast, setSavedToast] = useState(null);
   const toastTimerRef = useRef(null);
@@ -1113,27 +1115,28 @@ function DailyTrackerPage({ onBack }) {
     setEditingComments((currentState) => {
       const nowOpen = !currentState[ticketNumber];
       if (nowOpen) {
-        // append a newline when re-opening if there is already content
-        setCommentsByNumber((prev) => {
-          const existing = prev[ticketNumber] || '';
-          return existing && !existing.endsWith('\n')
-            ? { ...prev, [ticketNumber]: existing + '\n' }
-            : prev;
-        });
+        // always start with a blank draft — saved history stays separate
+        setDraftComments((prev) => ({ ...prev, [ticketNumber]: '' }));
       }
       return { ...currentState, [ticketNumber]: nowOpen };
     });
   };
 
-  const handleCommentChange = (ticketNumber, value) => {
-    setCommentsByNumber((currentState) => ({
-      ...currentState,
-      [ticketNumber]: value
-    }));
+  const handleCommentDraftChange = (ticketNumber, value) => {
+    setDraftComments((prev) => ({ ...prev, [ticketNumber]: value }));
   };
 
   const handleSaveComment = (ticketNumber) => {
-    // close the editor
+    const draft = (draftComments[ticketNumber] || '').trim();
+    if (draft) {
+      // append the new entry to the saved history with a newline separator
+      setCommentsByNumber((prev) => {
+        const existing = (prev[ticketNumber] || '').trimEnd();
+        return { ...prev, [ticketNumber]: existing ? `${existing}\n${draft}` : draft };
+      });
+    }
+    // clear the draft and close the editor
+    setDraftComments((prev) => ({ ...prev, [ticketNumber]: '' }));
     setEditingComments((currentState) => ({ ...currentState, [ticketNumber]: false }));
     // show toast
     if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
@@ -1691,15 +1694,15 @@ function DailyTrackerPage({ onBack }) {
                               <>
                                 <textarea
                                   className="commentInput"
-                                  value={commentsByNumber[incident.number] || ''}
-                                  onChange={(event) => handleCommentChange(incident.number, event.target.value)}
+                                  value={draftComments[incident.number] || ''}
+                                  onChange={(event) => handleCommentDraftChange(incident.number, event.target.value)}
                                   onKeyDown={(event) => {
                                     if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
                                       event.preventDefault();
                                       handleSaveComment(incident.number);
                                     }
                                   }}
-                                  placeholder="Add recent ticket update&#10;Ctrl+Enter to save"
+                                  placeholder="Add new comment&#10;Ctrl+Enter to save"
                                   autoFocus
                                 />
                                 <button
