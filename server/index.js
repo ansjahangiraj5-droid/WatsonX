@@ -9,7 +9,7 @@ const { askGemini } = require('./gemini');
 // ── Constants ────────────────────────────────────────────────────────────────
 const PORT            = parseInt(process.env.PORT || '3001', 10);
 const HOST            = '127.0.0.1';                 
-const ALLOWED_ORIGIN  = ['http://localhost:5173', 'http://127.0.0.1:5173'];     
+const ALLOWED_ORIGIN  = ['http://localhost:5173', 'http://127.0.0.1:5173','https://watson-x.vercel.app/'];     
 const MAX_QUESTION_LEN = 1000;                        
 const MAX_TICKETS      = 5000;                        
 
