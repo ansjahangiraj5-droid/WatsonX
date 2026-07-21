@@ -1473,50 +1473,91 @@ function DailyTrackerPage({ onBack }) {
           </section>
 
           {/* ──  AI Chat Assistant Block ── */}
-          <section className="tableCard darkPanel" style={{ marginBottom: 20 }}>
-            <div className="tableHeader">
-              <div>
-                <h2 style={{ color: '#fff' }}>✨ AI Ticket Analyst</h2>
-                <p className="tableSubtitle" style={{ color: '#94a3b8' }}>Ask questions about the current filtered ticket data.</p>
-              </div>
-              <span className="pill">Powered by Gemini</span>
-            </div>
-            
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-              <textarea
-                className="commentInput"
-                style={{ minHeight: 60, width: '100%' }}
-                placeholder="E.g., 'Which assignee has the most breached P1 tickets?' or 'Summarize the comments.'"
-                value={chatInput}
-                onChange={(e) => setChatInput(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault();
-                    handleAskAI();
-                  }
-                }}
-              />
-              <div className="buttonRow">
-                <button 
-                  type="button" 
-                  className="actionButton primaryButton" 
-                  onClick={handleAskAI}
-                  disabled={isChatLoading || !chatInput.trim() || filteredIncidents.length === 0}
-                >
-                  {isChatLoading ? 'Analyzing Data...' : 'Ask AI'}
-                </button>
-              </div>
-
-              {chatError && <p className="bannerError">{chatError}</p>}
-              
-              {chatResponse && (
-                <div style={{ background: 'rgba(255,255,255,0.05)', padding: 16, borderRadius: 14, marginTop: 10, border: '1px solid rgba(255,255,255,0.1)' }}>
-                  <strong style={{ color: '#22d3ee', display: 'block', marginBottom: 8 }}>AI Response:</strong>
-                  <div style={{ color: '#f8fafc', whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>{chatResponse}</div>
+          {(() => {
+            const isNoData = filteredIncidents.length === 0;
+            const isButtonDisabled = isChatLoading || !chatInput.trim() || isNoData;
+            const tooltipText = isNoData
+              ? 'AI Ticket Analyst will become available once ticket data has been uploaded. Upload a valid spreadsheet to enable this feature.'
+              : 'Please enter a question before analyzing.';
+            return (
+              <section
+                className="tableCard darkPanel"
+                style={{ marginBottom: 20, opacity: isNoData ? 0.72 : 1, transition: 'opacity 0.2s' }}
+              >
+                <div className="tableHeader">
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                        <h2 style={{ color: isNoData ? '#64748b' : '#fff', transition: 'color 0.2s' }}>✨ AI Ticket Analyst</h2>
+                        {isNoData && (
+                          <i
+                            className="aiInfoIcon"
+                            data-tooltip="AI Ticket Analyst will become available once all the required prerequisites are met. Upload a valid ticket data file to enable this feature."
+                          >i</i>
+                        )}
+                      </div>
+                      <p className="tableSubtitle" style={{ color: isNoData ? '#475569' : '#94a3b8', transition: 'color 0.2s' }}>
+                        {isNoData ? 'Upload ticket data to unlock AI analysis.' : 'Ask questions about the current filtered ticket data.'}
+                      </p>
+                    </div>
+                  </div>
+                  <span className="pill" style={{ opacity: isNoData ? 0.45 : 1, transition: 'opacity 0.2s' }}>Powered by Gemini</span>
                 </div>
-              )}
-            </div>
-          </section>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                  <textarea
+                    className="commentInput"
+                    style={{ minHeight: 60, width: '100%' }}
+                    placeholder={isNoData ? 'Upload ticket data to enable AI analysis…' : "E.g., 'Which assignee has the most breached P1 tickets?' or 'Summarize the comments.'"}
+                    value={chatInput}
+                    disabled={isNoData}
+                    onChange={(e) => setChatInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault();
+                        handleAskAI();
+                      }
+                    }}
+                  />
+
+                  <div className="buttonRow" style={{ alignItems: 'center' }}>
+                    <div className="disabledButtonWrapper">
+                      <button
+                        type="button"
+                        className="actionButton primaryButton"
+                        onClick={handleAskAI}
+                        disabled={isButtonDisabled}
+                        style={{ pointerEvents: isButtonDisabled ? 'none' : undefined }}
+                      >
+                        {isChatLoading ? 'Analyzing Data...' : 'Ask AI'}
+                      </button>
+                      {isButtonDisabled && (
+                        <i
+                          className="aiInfoIcon"
+                          data-tooltip={tooltipText}
+                        >i</i>
+                      )}
+                    </div>
+                  </div>
+
+                  {isNoData && (
+                    <p className="aiSectionDisabledHint">
+                      ℹ️ &nbsp;AI Ticket Analyst will become available once all the required prerequisites are met. Complete the necessary steps to enable this feature.
+                    </p>
+                  )}
+
+                  {chatError && <p className="bannerError">{chatError}</p>}
+
+                  {chatResponse && (
+                    <div style={{ background: 'rgba(255,255,255,0.05)', padding: 16, borderRadius: 14, marginTop: 10, border: '1px solid rgba(255,255,255,0.1)' }}>
+                      <strong style={{ color: '#22d3ee', display: 'block', marginBottom: 8 }}>AI Response:</strong>
+                      <div style={{ color: '#f8fafc', whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>{chatResponse}</div>
+                    </div>
+                  )}
+                </div>
+              </section>
+            );
+          })()}
 
           <section className="insightsGrid wideGrid">
             <article className="tableCard overviewCard darkPanel">

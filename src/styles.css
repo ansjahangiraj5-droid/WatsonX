@@ -272,6 +272,87 @@ h2 {
   background: linear-gradient(135deg, #0ea5e9, #8b5cf6);
 }
 
+.actionButton:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  filter: grayscale(40%);
+  pointer-events: none;
+}
+
+/* Wrapper that re-enables pointer-events so the tooltip still fires on a disabled button */
+.disabledButtonWrapper {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.disabledButtonWrapper .actionButton:disabled {
+  pointer-events: none;
+}
+
+/* ── AI section: info icon + tooltip ── */
+.aiInfoIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 1.5px solid rgba(148, 163, 184, 0.6);
+  color: #94a3b8;
+  font-size: 0.7rem;
+  font-weight: 800;
+  font-style: normal;
+  line-height: 1;
+  cursor: default;
+  flex-shrink: 0;
+  position: relative;
+}
+
+.aiInfoIcon::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  min-width: 240px;
+  max-width: 300px;
+  padding: 10px 13px;
+  border-radius: 10px;
+  background: rgba(15, 23, 42, 0.97);
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  color: #cbd5e1;
+  font-size: 0.8rem;
+  font-weight: 400;
+  font-style: normal;
+  line-height: 1.55;
+  white-space: normal;
+  text-align: left;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+  z-index: 100;
+}
+
+.aiInfoIcon:hover::after {
+  opacity: 1;
+}
+
+/* ── disabled section overlay hint ── */
+.aiSectionDisabledHint {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 9px 14px;
+  border-radius: 10px;
+  background: rgba(148, 163, 184, 0.08);
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  color: #64748b;
+  font-size: 0.82rem;
+  line-height: 1.5;
+}
+
 .bannerError {
   margin: 0;
   padding: 14px 16px;
