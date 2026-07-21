@@ -847,6 +847,9 @@ function DailyTrackerPage({ onBack }) {
     setCustomColValues({});
     setEditingCustomCells({});
     setError(message);
+    setChatInput('');
+    setChatResponse('');
+    setChatError('');
 
     if (typeof window !== 'undefined') {
       window.sessionStorage.removeItem(sessionStorageKey);
