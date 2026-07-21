@@ -861,6 +861,54 @@ function DailyTrackerPage({ onBack }) {
     }
   };
 
+  // ── AI Chat State ────────────────────────────────────────
+  const [chatInput, setChatInput] = useState('');
+  const [chatResponse, setChatResponse] = useState('');
+  const [isChatLoading, setIsChatLoading] = useState(false);
+  const [chatError, setChatError] = useState('');
+
+  const handleAskAI = async () => {
+    console.log('User question:', chatInput);
+    if (!chatInput.trim() || filteredIncidents.length === 0) return;
+    setIsChatLoading(true);
+    setChatError('');
+    setChatResponse('');
+
+    // LLM ke liye clean JSON banate hain taaki tokens bachein aur answer accurate aaye
+    const ticketDataForAI = filteredIncidents.map((inc) => ({
+      Number: inc.number,
+      Priority: inc.priority,
+      AssignmentGroup: inc.assignmentGroup,
+      AssignedTo: inc.assignedTo,
+      Status: inc.withinTarget ? 'Within Target' : 'Breached',
+      Duration: `${inc.actualDuration} ${inc.target.unit}`,
+      Comments: inc.comment || 'None'
+    }));
+
+    try {
+      const response = await fetch('http://127.0.0.1:3001/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          question: chatInput,
+          tickets: ticketDataForAI
+        })
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to fetch AI response.');
+      }
+
+      setChatResponse(data.answer);
+    } catch (err) {
+      setChatError(err.message);
+    } finally {
+      setIsChatLoading(false);
+    }
+  };
+
   const incidentConfig = useMemo(() => createIncidentConfig(headers), [headers]);
 
   const incidents = useMemo(() => {
@@ -1424,6 +1472,52 @@ function DailyTrackerPage({ onBack }) {
             </article>
           </section>
 
+          {/* ──  AI Chat Assistant Block ── */}
+          <section className="tableCard darkPanel" style={{ marginBottom: 20 }}>
+            <div className="tableHeader">
+              <div>
+                <h2 style={{ color: '#fff' }}>✨ AI Ticket Analyst</h2>
+                <p className="tableSubtitle" style={{ color: '#94a3b8' }}>Ask questions about the current filtered ticket data.</p>
+              </div>
+              <span className="pill">Powered by Gemini</span>
+            </div>
+            
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <textarea
+                className="commentInput"
+                style={{ minHeight: 60, width: '100%' }}
+                placeholder="E.g., 'Which assignee has the most breached P1 tickets?' or 'Summarize the comments.'"
+                value={chatInput}
+                onChange={(e) => setChatInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    handleAskAI();
+                  }
+                }}
+              />
+              <div className="buttonRow">
+                <button 
+                  type="button" 
+                  className="actionButton primaryButton" 
+                  onClick={handleAskAI}
+                  disabled={isChatLoading || !chatInput.trim() || filteredIncidents.length === 0}
+                >
+                  {isChatLoading ? 'Analyzing Data...' : 'Ask AI'}
+                </button>
+              </div>
+
+              {chatError && <p className="bannerError">{chatError}</p>}
+              
+              {chatResponse && (
+                <div style={{ background: 'rgba(255,255,255,0.05)', padding: 16, borderRadius: 14, marginTop: 10, border: '1px solid rgba(255,255,255,0.1)' }}>
+                  <strong style={{ color: '#22d3ee', display: 'block', marginBottom: 8 }}>AI Response:</strong>
+                  <div style={{ color: '#f8fafc', whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>{chatResponse}</div>
+                </div>
+              )}
+            </div>
+          </section>
+
           <section className="insightsGrid wideGrid">
             <article className="tableCard overviewCard darkPanel">
               <div className="tableHeader fixedHeader">
@@ -1784,6 +1878,8 @@ function DailyTrackerPage({ onBack }) {
 ═══════════════════════════════════════════════════════════════════════════ */
 
 const pageStorageKey = 'watsonx-active-page';
+
+
 
 function App() {
   const [page, setPage] = useState(() => {
