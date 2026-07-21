@@ -1616,7 +1616,7 @@ function DailyTrackerPage({ onBack }) {
                       {isNoData ? 'Upload ticket data to unlock AI analysis.' : 'Ask questions about the current filtered ticket data.'}
                     </p>
                   </div>
-                  <span className="aiPoweredBadge" style={{ opacity: isNoData ? 0.4 : 1 }}>Powered by Gemini</span>
+                  <span className="aiPoweredBadge" style={{ opacity: isNoData ? 0.4 : 1 }}>Smart AI Output</span>
                 </div>
 
                 {/* ── Input area ── */}
