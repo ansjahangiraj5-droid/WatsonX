@@ -1482,65 +1482,126 @@ function DailyTrackerPage({ onBack }) {
             const tooltipText = isNoData
               ? 'AI Ticket Analyst will become available once ticket data has been uploaded. Upload a valid spreadsheet to enable this feature.'
               : 'Please enter a question before analyzing.';
+
+            // Renders the AI text response with lightweight markdown-style formatting:
+            // lines starting with # → heading, - / * / • → bullet, 1. → numbered,
+            // **text** → bold. Falls back to a plain paragraph.
+            const renderResponse = (text) => {
+              const lines = text.split('\n');
+              const blocks = [];
+              let bulletBuffer = [];
+              let numberedBuffer = [];
+
+              const flushBullets = () => {
+                if (bulletBuffer.length) {
+                  blocks.push(
+                    <ul key={`b-${blocks.length}`} className="aiRespBulletList">
+                      {bulletBuffer.map((l, i) => <li key={i}>{renderInline(l)}</li>)}
+                    </ul>
+                  );
+                  bulletBuffer = [];
+                }
+              };
+              const flushNumbered = () => {
+                if (numberedBuffer.length) {
+                  blocks.push(
+                    <ol key={`n-${blocks.length}`} className="aiRespNumberedList">
+                      {numberedBuffer.map((l, i) => <li key={i}>{renderInline(l)}</li>)}
+                    </ol>
+                  );
+                  numberedBuffer = [];
+                }
+              };
+              const renderInline = (str) => {
+                const parts = str.split(/(\*\*[^*]+\*\*)/g);
+                return parts.map((p, i) =>
+                  p.startsWith('**') && p.endsWith('**')
+                    ? <span key={i} className="aiRespBold">{p.slice(2, -2)}</span>
+                    : p
+                );
+              };
+
+              lines.forEach((raw, idx) => {
+                const line = raw.trimEnd();
+                if (line.match(/^#{1,3}\s/)) {
+                  flushBullets(); flushNumbered();
+                  blocks.push(<p key={idx} className="aiRespHeading">{renderInline(line.replace(/^#{1,3}\s/, ''))}</p>);
+                } else if (line.match(/^[-*•]\s/)) {
+                  flushNumbered();
+                  bulletBuffer.push(line.replace(/^[-*•]\s/, ''));
+                } else if (line.match(/^\d+\.\s/)) {
+                  flushBullets();
+                  numberedBuffer.push(line.replace(/^\d+\.\s/, ''));
+                } else if (line.trim() === '') {
+                  flushBullets(); flushNumbered();
+                } else {
+                  flushBullets(); flushNumbered();
+                  blocks.push(<p key={idx} className="aiRespPara">{renderInline(line)}</p>);
+                }
+              });
+              flushBullets(); flushNumbered();
+              return blocks;
+            };
+
             return (
-              <section
-                className="tableCard darkPanel"
-                style={{ marginBottom: 20, opacity: isNoData ? 0.72 : 1, transition: 'opacity 0.2s' }}
-              >
-                <div className="tableHeader">
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-                        <h2 style={{ color: isNoData ? '#64748b' : '#fff', transition: 'color 0.2s' }}>✨ AI Ticket Analyst</h2>
-                        {isNoData && (
-                          <i
-                            className="aiInfoIcon"
-                            data-tooltip="AI Ticket Analyst will become available once all the required prerequisites are met. Upload a valid ticket data file to enable this feature."
-                          >i</i>
-                        )}
-                      </div>
-                      <p className="tableSubtitle" style={{ color: isNoData ? '#475569' : '#94a3b8', transition: 'color 0.2s' }}>
-                        {isNoData ? 'Upload ticket data to unlock AI analysis.' : 'Ask questions about the current filtered ticket data.'}
-                      </p>
+              <section className="aiSection" style={{ opacity: isNoData ? 0.72 : 1 }}>
+
+                {/* ── Header ── */}
+                <div className="aiSectionHeader">
+                  <div className="aiSectionTitleGroup">
+                    <div className="aiSectionTitleRow">
+                      <h2 className={`aiSectionTitle${isNoData ? ' muted' : ''}`}>✨ AI Ticket Analyst</h2>
+                      {isNoData && (
+                        <i className="aiInfoIcon" data-tooltip="AI Ticket Analyst will become available once all the required prerequisites are met. Upload a valid ticket data file to enable this feature.">i</i>
+                      )}
                     </div>
+                    <p className={`aiSectionSubtitle${isNoData ? '' : ' active'}`}>
+                      {isNoData ? 'Upload ticket data to unlock AI analysis.' : 'Ask questions about the current filtered ticket data.'}
+                    </p>
                   </div>
-                  <span className="pill" style={{ opacity: isNoData ? 0.45 : 1, transition: 'opacity 0.2s' }}>Powered by Gemini</span>
+                  <span className="aiPoweredBadge" style={{ opacity: isNoData ? 0.4 : 1 }}>Powered by Gemini</span>
                 </div>
 
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                  <textarea
-                    className="commentInput"
-                    style={{ minHeight: 60, width: '100%' }}
-                    placeholder={isNoData ? 'Upload ticket data to enable AI analysis…' : "E.g., 'Which assignee has the most breached P1 tickets?' or 'Summarize the comments.'"}
-                    value={chatInput}
-                    disabled={isNoData}
-                    onChange={(e) => setChatInput(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' && !e.shiftKey) {
-                        e.preventDefault();
-                        handleAskAI();
-                      }
-                    }}
-                  />
+                {/* ── Input area ── */}
+                <div className="aiInputArea">
+                  <div className="aiTextareaWrapper">
+                    <textarea
+                      className="aiTextarea"
+                      placeholder={isNoData ? 'Upload ticket data to enable AI analysis\u2026' : 'e.g. \u201cWhich assignee has the most breached P1 tickets?\u201d or \u201cSummarise comments.\u201d'}
+                      value={chatInput}
+                      disabled={isNoData}
+                      onChange={(e) => setChatInput(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleAskAI(); }
+                      }}
+                    />
+                  </div>
 
-                  <div className="buttonRow" style={{ alignItems: 'center' }}>
+                  <div className="aiButtonRow">
                     <div className="disabledButtonWrapper">
                       <button
                         type="button"
-                        className="actionButton primaryButton"
+                        className="aiAskButton"
                         onClick={handleAskAI}
                         disabled={isButtonDisabled}
                         style={{ pointerEvents: isButtonDisabled ? 'none' : undefined }}
                       >
-                        {isChatLoading ? 'Analyzing Data...' : 'Ask AI'}
+                        {isChatLoading ? (
+                          <>
+                            Analyzing
+                            <span className="aiLoadingDots">
+                              <span /><span /><span />
+                            </span>
+                          </>
+                        ) : 'Analyze'}
                       </button>
                       {isButtonDisabled && (
-                        <i
-                          className="aiInfoIcon"
-                          data-tooltip={tooltipText}
-                        >i</i>
+                        <i className="aiInfoIcon" data-tooltip={tooltipText}>i</i>
                       )}
                     </div>
+                    {!isNoData && !isChatLoading && (
+                      <span className="aiShortcutHint">Press Enter ↵ to send</span>
+                    )}
                   </div>
 
                   {isNoData && (
@@ -1549,15 +1610,26 @@ function DailyTrackerPage({ onBack }) {
                     </p>
                   )}
 
-                  {chatError && <p className="bannerError">{chatError}</p>}
-
-                  {chatResponse && (
-                    <div style={{ background: 'rgba(255,255,255,0.05)', padding: 16, borderRadius: 14, marginTop: 10, border: '1px solid rgba(255,255,255,0.1)' }}>
-                      <strong style={{ color: '#22d3ee', display: 'block', marginBottom: 8 }}>AI Response:</strong>
-                      <div style={{ color: '#f8fafc', whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>{chatResponse}</div>
-                    </div>
-                  )}
+                  {chatError && <p className="bannerError" style={{ margin: 0 }}>{chatError}</p>}
                 </div>
+
+                {/* ── Response panel ── */}
+                {chatResponse && (
+                  <>
+                    <div className="aiResponseDivider" />
+                    <div className="aiResponsePanel">
+                      <div className="aiResponseHeader">
+                        <div className="aiResponseAvatar">AI</div>
+                        <span className="aiResponseLabel">AI Response</span>
+                        <span className="aiResponseTimestamp">Just now</span>
+                      </div>
+                      <div className="aiResponseBody">
+                        {renderResponse(chatResponse)}
+                      </div>
+                    </div>
+                  </>
+                )}
+
               </section>
             );
           })()}
