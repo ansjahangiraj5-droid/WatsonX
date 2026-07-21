@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import * as XLSX from 'xlsx';
+import ReactECharts from 'echarts-for-react';
 
 /* ─────────────────────────── shared constants ─────────────────────────── */
 
@@ -437,7 +438,7 @@ function HomePage({ onNavigate }) {
         </p>
       </div>
 
-      <div className="homeCardGrid">
+      <div className="homeCardGrid homeCardGridThree">
         <button type="button" className="homeModuleCard" onClick={() => onNavigate('daily')}>
           <div className="homeModuleIcon homeModuleIconBlue">DT</div>
           <h2 className="homeModuleTitle">Daily Tracker</h2>
@@ -457,6 +458,16 @@ function HomePage({ onNavigate }) {
           </p>
           <span className="homeModuleCta">Open Breach Analysis →</span>
         </button>
+
+        <button type="button" className="homeModuleCard" onClick={() => onNavigate('aianalyzer')}>
+          <div className="homeModuleIcon homeModuleIconGreen">AI</div>
+          <h2 className="homeModuleTitle">AI Analyzer</h2>
+          <p className="homeModuleDesc">
+            Upload any Excel workbook and interrogate it with AI. Ask questions in plain English or
+            request charts, data tables, and calculations — then download the results.
+          </p>
+          <span className="homeModuleCta">Open AI Analyzer →</span>
+        </button>
       </div>
     </main>
   );
@@ -475,6 +486,11 @@ function readBreachStoredState() {
   try { return JSON.parse(saved); } catch { return null; }
 }
 
+const MONTHS = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December'
+];
+
 function BreachAnalysisPage({ onBack }) {
   const countFileRef = useRef(null);
   const breachFileRef = useRef(null);
@@ -489,6 +505,8 @@ function BreachAnalysisPage({ onBack }) {
   const [breachError, setBreachError] = useState('');
   const [breachCounts, setBreachCounts] = useState(initialBreachState?.breachCounts || null);
 
+  const [selectedMonth, setSelectedMonth] = useState(initialBreachState?.selectedMonth || MONTHS[new Date().getMonth()]);
+
   /* ── persist to session storage whenever data changes ── */
 
   useEffect(() => {
@@ -499,9 +517,9 @@ function BreachAnalysisPage({ onBack }) {
     }
     window.sessionStorage.setItem(
       breachStorageKey,
-      JSON.stringify({ countFileName, priorityCounts, breachFileName, breachCounts })
+      JSON.stringify({ countFileName, priorityCounts, breachFileName, breachCounts, selectedMonth })
     );
-  }, [countFileName, priorityCounts, breachFileName, breachCounts]);
+  }, [countFileName, priorityCounts, breachFileName, breachCounts, selectedMonth]);
 
   /* ── upload handlers ── */
 
@@ -608,17 +626,35 @@ function BreachAnalysisPage({ onBack }) {
     });
   }, [priorityCounts, breachCounts]);
 
-  const handleExportSlaTable = () => {
-    const headers = ['SLA Definition', 'Target', 'Expected SLA %', 'SLA Achieved %'];
+  const handleExportSlaTable = async () => {
+    const hdrs = ['Month', 'SLA Definition', 'Target', 'Expected SLA %', 'SLA Achieved %'];
     const dataRows = slaTableRows.map((row) => [
+      selectedMonth,
       row.label,
       row.target,
       `${row.expectedPct}%`,
       row.achievedPct === null ? '—' : `${row.achievedPct.toFixed(2)}%`
     ]);
     const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet([headers, ...dataRows]), 'SLA Achievement');
-    XLSX.writeFile(workbook, 'sla-achievement-summary.xlsx');
+    XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet([hdrs, ...dataRows]), 'SLA Achievement');
+    const suggestedName = `sla-achievement-${selectedMonth.toLowerCase()}.xlsx`;
+
+    if (window.showSaveFilePicker) {
+      try {
+        const fileHandle = await window.showSaveFilePicker({
+          suggestedName,
+          types: [{ description: 'Excel Workbook', accept: { 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx'] } }]
+        });
+        const writable = await fileHandle.createWritable();
+        const buffer = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
+        await writable.write(new Blob([buffer], { type: 'application/octet-stream' }));
+        await writable.close();
+        return;
+      } catch (err) {
+        if (err.name === 'AbortError') return;
+      }
+    }
+    XLSX.writeFile(workbook, suggestedName);
   };
 
   /* ── render ── */
@@ -754,15 +790,34 @@ function BreachAnalysisPage({ onBack }) {
                 )}
               </p>
             </div>
-            <button type="button" className="actionButton exportButton" onClick={handleExportSlaTable}>
-              Download Excel
-            </button>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                <label htmlFor="breach-month-filter" style={{ color: '#475569', fontSize: '0.78rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                  Month
+                </label>
+                <select
+                  id="breach-month-filter"
+                  className="filterSelect"
+                  value={selectedMonth}
+                  onChange={(e) => setSelectedMonth(e.target.value)}
+                  style={{ minWidth: 140 }}
+                >
+                  {MONTHS.map((m) => (
+                    <option key={m} value={m}>{m}</option>
+                  ))}
+                </select>
+              </div>
+              <button type="button" className="actionButton exportButton" onClick={handleExportSlaTable} style={{ alignSelf: 'flex-end' }}>
+                Download Excel
+              </button>
+            </div>
           </div>
 
           <div className="tableWrapper">
             <table className="slaTable">
               <thead>
                 <tr>
+                  <th>Month</th>
                   <th>SLA Definition</th>
                   <th>Target</th>
                   <th>Expected SLA %</th>
@@ -777,6 +832,7 @@ function BreachAnalysisPage({ onBack }) {
 
                   return (
                     <tr key={row.key}>
+                      <td style={{ color: '#6366f1', fontWeight: 700 }}>{selectedMonth}</td>
                       <td style={{ fontWeight: 600 }}>{row.label}</td>
                       <td>{row.target}</td>
                       <td>{row.expectedPct}%</td>
@@ -856,6 +912,7 @@ function DailyTrackerPage({ onBack }) {
     }
   };
 
+
   const handleClear = () => {
     resetData();
 
@@ -889,7 +946,7 @@ function DailyTrackerPage({ onBack }) {
     }));
 
     try {
-      const response = await fetch('https://watsonserver.onrender.com/api/chat', {
+      const response = await fetch('http://localhost:3001/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1990,18 +2047,450 @@ function DailyTrackerPage({ onBack }) {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
+   AI ANALYZER PAGE
+═══════════════════════════════════════════════════════════════════════════ */
+
+const aiAnalyzerStorageKey = 'watsonx-ai-analyzer-state';
+
+function readAIAnalyzerStoredState() {
+  try {
+    const raw = window.sessionStorage.getItem(aiAnalyzerStorageKey);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed || !Array.isArray(parsed.headers) || !Array.isArray(parsed.rows)) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function AIAnalyzerPage({ onBack }) {
+  const fileInputRef = useRef(null);
+  const chartRef = useRef(null);
+  const initialState = useMemo(() => readAIAnalyzerStoredState(), []);
+
+  const [fileName, setFileName] = useState(initialState?.fileName || '');
+  const [sheetName, setSheetName] = useState(initialState?.sheetName || '');
+  const [headers, setHeaders] = useState(initialState?.headers || []);
+  const [rows, setRows] = useState(initialState?.rows || []);
+  const [error, setError] = useState('');
+
+  // AI Data Analyst
+  const [dashboardRequest, setDashboardRequest] = useState('');
+  const [dashboardResult, setDashboardResult] = useState(null);
+  const [isChartGenerating, setIsChartGenerating] = useState(false);
+  const [dashboardError, setDashboardError] = useState('');
+
+  const hasData = rows.length > 0 && headers.length > 0;
+
+  // ── Persist to session storage ─────────────────────────────────────────
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (!hasData) return;
+    window.sessionStorage.setItem(
+      aiAnalyzerStorageKey,
+      JSON.stringify({ fileName, sheetName, headers, rows })
+    );
+  }, [fileName, sheetName, headers, rows, hasData]);
+
+  // ── Reset ──────────────────────────────────────────────────────────────
+  const resetData = (message = '', nextFileName = '') => {
+    setFileName(nextFileName);
+    setSheetName('');
+    setHeaders([]);
+    setRows([]);
+    setError(message);
+    setDashboardRequest('');
+    setDashboardResult(null);
+    setDashboardError('');
+    if (typeof window !== 'undefined') {
+      window.sessionStorage.removeItem(aiAnalyzerStorageKey);
+    }
+  };
+
+  const handleClear = () => {
+    resetData();
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  // ── File upload ────────────────────────────────────────────────────────
+  const handleFileUpload = async (event) => {
+    const selectedFile = event.target.files?.[0];
+    if (!selectedFile) return;
+
+    const hasExcelExtension = /\.(xlsx|xls)$/i.test(selectedFile.name);
+    const hasAllowedMimeType = !selectedFile.type || allowedExcelTypes.has(selectedFile.type);
+
+    if (!hasExcelExtension || !hasAllowedMimeType) {
+      resetData('Only Excel files (.xlsx or .xls) are allowed.', '');
+      event.target.value = '';
+      return;
+    }
+
+    try {
+      const fileBuffer = await selectedFile.arrayBuffer();
+      const workbook = XLSX.read(fileBuffer, { type: 'array', cellDates: true });
+      const firstSheetName = workbook.SheetNames[0];
+
+      if (!firstSheetName) {
+        resetData('The uploaded Excel file does not contain any sheets.', selectedFile.name);
+        return;
+      }
+
+      const worksheet = workbook.Sheets[firstSheetName];
+      const sheetData = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: '' });
+      const nonEmptyRows = sheetData.filter((row) => Array.isArray(row) && row.some((cell) => String(cell).trim() !== ''));
+
+      if (nonEmptyRows.length < 2) {
+        resetData('The uploaded Excel file is empty or has no data rows.', selectedFile.name);
+        return;
+      }
+
+      const rawHeaders = nonEmptyRows[0].map((h, i) => String(h).trim() || `Column ${i + 1}`);
+      const dataRows = nonEmptyRows.slice(1).map((row) =>
+        rawHeaders.map((_, i) => {
+          const val = row[i];
+          if (val instanceof Date) return val.toISOString();
+          return val ?? '';
+        })
+      );
+
+      setFileName(selectedFile.name);
+      setSheetName(firstSheetName);
+      setHeaders(rawHeaders);
+      setRows(dataRows);
+      setError('');
+      setDashboardResult(null);
+      setDashboardError('');
+    } catch {
+      resetData('Unable to read the uploaded file. Please upload a valid Excel file.', selectedFile.name);
+    } finally {
+      event.target.value = '';
+    }
+  };
+
+  // ── Shared ticket payload builder ──────────────────────────────────────
+  const buildPayload = () =>
+    rows.map((row) =>
+      Object.fromEntries(headers.map((h, i) => [h, row[i] ?? '']))
+    );
+
+  // ── AI Data Analyst ────────────────────────────────────────────────────
+  const handleGenerateDashboard = async () => {
+    if (!dashboardRequest.trim() || !hasData) return;
+    setIsChartGenerating(true);
+    setDashboardError('');
+    setDashboardResult(null);
+
+    try {
+      const response = await fetch('http://localhost:3001/api/dashboard', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userRequest: dashboardRequest, tickets: buildPayload() })
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Failed to generate AI response.');
+      setDashboardResult(data.chartConfig);
+    } catch (err) {
+      setDashboardError(err.message);
+    } finally {
+      setIsChartGenerating(false);
+    }
+  };
+
+  // ── Download chart as PNG ──────────────────────────────────────────────
+  const handleDownloadChart = async () => {
+    const echartsInstance = chartRef.current?.getEchartsInstance?.();
+    if (!echartsInstance) return;
+    const dataUrl = echartsInstance.getDataURL({ type: 'png', pixelRatio: 2, backgroundColor: '#fff' });
+    const suggestedName = 'ai-chart.png';
+    if (window.showSaveFilePicker) {
+      try {
+        const fileHandle = await window.showSaveFilePicker({
+          suggestedName,
+          types: [{ description: 'PNG Image', accept: { 'image/png': ['.png'] } }]
+        });
+        const res = await fetch(dataUrl);
+        const blob = await res.blob();
+        const writable = await fileHandle.createWritable();
+        await writable.write(blob);
+        await writable.close();
+        return;
+      } catch (err) {
+        if (err.name === 'AbortError') return;
+      }
+    }
+    const a = document.createElement('a');
+    a.href = dataUrl;
+    a.download = suggestedName;
+    a.click();
+  };
+
+  // ── Download text/table as .txt ────────────────────────────────────────
+  const handleDownloadResponse = async (text, suggestedName) => {
+    const blob = new Blob([text], { type: 'text/plain' });
+    if (window.showSaveFilePicker) {
+      try {
+        const fileHandle = await window.showSaveFilePicker({
+          suggestedName,
+          types: [{ description: 'Text File', accept: { 'text/plain': ['.txt'] } }]
+        });
+        const writable = await fileHandle.createWritable();
+        await writable.write(blob);
+        await writable.close();
+        return;
+      } catch (err) {
+        if (err.name === 'AbortError') return;
+        // fall through to legacy download
+      }
+    }
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = suggestedName;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  // ── Markdown renderer is NOT needed in AI Analyzer (no text chat) ──────
+  const renderResponse = (text) => {
+    const lines = text.split('\n');
+    const blocks = [];
+    let bulletBuffer = [];
+    let numberedBuffer = [];
+
+    const flushBullets = () => {
+      if (bulletBuffer.length) {
+        blocks.push(
+          <ul key={`b-${blocks.length}`} className="aiRespBulletList">
+            {bulletBuffer.map((l, i) => <li key={i}>{renderInline(l)}</li>)}
+          </ul>
+        );
+        bulletBuffer = [];
+      }
+    };
+    const flushNumbered = () => {
+      if (numberedBuffer.length) {
+        blocks.push(
+          <ol key={`n-${blocks.length}`} className="aiRespNumberedList">
+            {numberedBuffer.map((l, i) => <li key={i}>{renderInline(l)}</li>)}
+          </ol>
+        );
+        numberedBuffer = [];
+      }
+    };
+    const renderInline = (str) => {
+      const parts = str.split(/(\*\*[^*]+\*\*)/g);
+      return parts.map((p, i) =>
+        p.startsWith('**') && p.endsWith('**')
+          ? <span key={i} className="aiRespBold">{p.slice(2, -2)}</span>
+          : p
+      );
+    };
+
+    lines.forEach((raw, idx) => {
+      const line = raw.trimEnd();
+      if (line.match(/^#{1,3}\s/)) {
+        flushBullets(); flushNumbered();
+        blocks.push(<p key={idx} className="aiRespHeading">{renderInline(line.replace(/^#{1,3}\s/, ''))}</p>);
+      } else if (line.match(/^[-*•]\s/)) {
+        flushNumbered();
+        bulletBuffer.push(line.replace(/^[-*•]\s/, ''));
+      } else if (line.match(/^\d+\.\s/)) {
+        flushBullets();
+        numberedBuffer.push(line.replace(/^\d+\.\s/, ''));
+      } else if (line.trim() === '') {
+        flushBullets(); flushNumbered();
+      } else {
+        flushBullets(); flushNumbered();
+        blocks.push(<p key={idx} className="aiRespPara">{renderInline(line)}</p>);
+      }
+    });
+    flushBullets(); flushNumbered();
+    return blocks;
+  };
+
+  const isNoData = !hasData;
+  const isDashboardButtonDisabled = isChartGenerating || !dashboardRequest.trim() || isNoData;
+
+  return (
+    <main className="page">
+      {/* ── nav bar ── */}
+      <div className="baNavBar" style={{ marginBottom: 20 }}>
+        <button type="button" className="actionButton ghostButton baBackBtn" onClick={onBack}>
+          ← Back to Home
+        </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <div className="brandBadge" style={{ width: 40, height: 40, borderRadius: 12, fontSize: '0.78rem' }}>WX</div>
+          <div>
+            <p className="eyebrow" style={{ color: '#34d399' }}>AI Analyzer</p>
+            <h2 style={{ color: '#ffffff', fontSize: '1.1rem' }}>Ticket Command Center</h2>
+          </div>
+        </div>
+      </div>
+
+      {/* ── hero / upload card ── */}
+      <section className="hero heroGradient" style={{ marginBottom: 20 }}>
+        <div>
+          <p className="eyebrow highlight">AI-powered analysis</p>
+          <h1>Excel data interrogation</h1>
+          <p className="subtitle lightText">
+            Upload any Excel workbook, then ask questions in plain English or request
+            charts and data tables. Download your AI-generated answers at any time.
+          </p>
+        </div>
+
+        <div className="uploadCard gradientCard">
+          <span>Upload Excel file</span>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".xlsx,.xls"
+            onChange={handleFileUpload}
+            style={{ display: 'none' }}
+          />
+          <strong>{fileName || 'No Excel file selected'}</strong>
+          <small>{sheetName ? `Sheet: ${sheetName}` : 'Accepted formats: .xlsx and .xls only'}</small>
+          <div className="buttonRow">
+            <button type="button" className="actionButton primaryButton" onClick={() => fileInputRef.current?.click()}>
+              Choose file
+            </button>
+            <button type="button" className="actionButton ghostButton" onClick={handleClear}>
+              Clear
+            </button>
+          </div>
+          {hasData && (
+            <small style={{ color: '#34d399', marginTop: 4 }}>
+              ✓ {rows.length} rows × {headers.length} columns loaded
+            </small>
+          )}
+        </div>
+      </section>
+
+      {error ? <p className="bannerError" style={{ marginBottom: 20 }}>{error}</p> : null}
+
+      {/* ══════════════════════════════════════════════════════
+          AI DATA ANALYST (charts / tables / calculations)
+      ══════════════════════════════════════════════════════ */}
+      <section className="tableCard overviewCard summaryGradient" style={{ marginBottom: 20 }}>
+        <div className="tableHeader">
+          <div>
+            <h2 style={{ color: '#0f172a' }}>✨ AI Data Analyst</h2>
+            <p className="tableSubtitle darkSubtitle">Ask for a chart, a data table, or specific calculations!</p>
+          </div>
+          <span className="pill">Smart AI Output</span>
+        </div>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 12 }}>
+          <input
+            className="customCellInput"
+            style={{ padding: '12px 16px', fontSize: '1rem', border: '1px solid #cbd5e1', borderRadius: '8px' }}
+            placeholder={isNoData ? 'Upload an Excel file to enable AI analysis…' : "E.g., 'Draw a pie chart of priority' or 'Create a table of assignees'"}
+            value={dashboardRequest}
+            disabled={isNoData}
+            onChange={(e) => setDashboardRequest(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') { e.preventDefault(); handleGenerateDashboard(); }
+            }}
+          />
+          <div className="buttonRow">
+            <button
+              type="button"
+              className="actionButton exportButton"
+              onClick={handleGenerateDashboard}
+              disabled={isDashboardButtonDisabled}
+            >
+              {isChartGenerating ? 'Analyzing Data...' : 'Generate Insights'}
+            </button>
+          </div>
+
+          {dashboardError && <p className="bannerError">{dashboardError}</p>}
+
+          {dashboardResult && (
+            <div style={{ marginTop: 20, padding: 16, background: '#fff', borderRadius: '16px', border: '1px solid #e2e8f0' }}>
+
+              {/* Download button — always shown when there is a result */}
+              <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 12 }}>
+                <button
+                  type="button"
+                  className="aiDownloadBtn aiDownloadBtnDark"
+                  title={dashboardResult.type === 'chart' ? 'Download chart as PNG' : 'Download result as text file'}
+                  onClick={() => {
+                    if (dashboardResult.type === 'chart') {
+                      handleDownloadChart();
+                    } else if (dashboardResult.type === 'text') {
+                      handleDownloadResponse(dashboardResult.data, 'ai-data-analyst.txt');
+                    } else if (dashboardResult.type === 'table') {
+                      const cols = dashboardResult.data.columns.join('\t');
+                      const dataRows = dashboardResult.data.rows.map((r) => r.join('\t')).join('\n');
+                      handleDownloadResponse(`${cols}\n${dataRows}`, 'ai-data-analyst.txt');
+                    }
+                  }}
+                >
+                  ↓ Download {dashboardResult.type === 'chart' ? 'Chart (PNG)' : 'Result'}
+                </button>
+              </div>
+
+              {/* Case 1: Chart */}
+              {dashboardResult.type === 'chart' && (
+                <ReactECharts
+                  ref={chartRef}
+                  option={dashboardResult.data}
+                  style={{ height: '400px', width: '100%' }}
+                  opts={{ renderer: 'canvas' }}
+                />
+              )}
+
+              {/* Case 2: Table */}
+              {dashboardResult.type === 'table' && (
+                <div className="tableWrapper">
+                  <table style={{ width: '100%' }}>
+                    <thead>
+                      <tr>
+                        {dashboardResult.data.columns.map((col, idx) => (
+                          <th key={idx}>{col}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {dashboardResult.data.rows.map((row, rIdx) => (
+                        <tr key={rIdx}>
+                          {row.map((cell, cIdx) => (
+                            <td key={cIdx}>{cell}</td>
+                          ))}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              {/* Case 3: Text / Calculation */}
+              {dashboardResult.type === 'text' && (
+                <div style={{ padding: '10px 14px', fontSize: '1.05rem', color: '#334155', lineHeight: '1.6' }}>
+                  <strong>AI Answer: </strong> {dashboardResult.data}
+                </div>
+              )}
+
+            </div>
+          )}
+        </div>
+      </section>
+    </main>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
    ROOT APP — routing shell
 ═══════════════════════════════════════════════════════════════════════════ */
 
 const pageStorageKey = 'watsonx-active-page';
 
-
-
 function App() {
   const [page, setPage] = useState(() => {
     try {
       const saved = window.sessionStorage.getItem(pageStorageKey);
-      if (saved === 'daily' || saved === 'breach') return saved;
+      if (saved === 'daily' || saved === 'breach' || saved === 'aianalyzer') return saved;
     } catch {}
     return 'home';
   });
@@ -2022,6 +2511,10 @@ function App() {
 
   if (page === 'breach') {
     return <BreachAnalysisPage onBack={goHome} />;
+  }
+
+  if (page === 'aianalyzer') {
+    return <AIAnalyzerPage onBack={goHome} />;
   }
 
   return <HomePage onNavigate={navigate} />;

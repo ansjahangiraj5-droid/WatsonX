@@ -698,6 +698,42 @@ h2 {
   margin: 0 24px;
 }
 
+/* ── AI download button (inside response panel header) ── */
+.aiDownloadBtn {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 13px;
+  border: 1px solid rgba(34, 211, 238, 0.35);
+  border-radius: 999px;
+  background: rgba(34, 211, 238, 0.08);
+  color: #22d3ee;
+  font-size: 0.75rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.aiDownloadBtn:hover {
+  background: rgba(34, 211, 238, 0.18);
+  border-color: rgba(34, 211, 238, 0.6);
+}
+
+/* variant for light-bg (AI Data Analyst result box) */
+.aiDownloadBtnDark {
+  border-color: rgba(99, 102, 241, 0.35);
+  background: rgba(99, 102, 241, 0.07);
+  color: #4f46e5;
+}
+
+.aiDownloadBtnDark:hover {
+  background: rgba(99, 102, 241, 0.16);
+  border-color: rgba(99, 102, 241, 0.55);
+}
+
 .bannerError {
   margin: 0;
   padding: 14px 16px;
@@ -1247,6 +1283,13 @@ tr:nth-child(even) td { background: rgba(248, 250, 252, 0.85); }
 
 .homeModuleIconBlue   { background: linear-gradient(135deg, #22d3ee, #3b82f6); }
 .homeModuleIconPurple { background: linear-gradient(135deg, #8b5cf6, #ec4899); }
+.homeModuleIconGreen  { background: linear-gradient(135deg, #10b981, #34d399); }
+
+/* three-card variant — wider max-width, 3-col grid */
+.homeCardGridThree {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  max-width: 1200px;
+}
 
 .homeModuleTitle {
   color: #ffffff;
@@ -1553,7 +1596,8 @@ tr:nth-child(even) td { background: rgba(248, 250, 252, 0.85); }
   .baUploadCard { padding: 18px; }
 
   /* ── home page ── */
-  .homeCardGrid { grid-template-columns: 1fr; }
+  .homeCardGrid,
+  .homeCardGridThree { grid-template-columns: 1fr; }
 
   .homePage {
     padding-top: 28px;
