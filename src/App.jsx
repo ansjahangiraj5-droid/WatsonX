@@ -886,7 +886,7 @@ function DailyTrackerPage({ onBack }) {
     }));
 
     try {
-      const response = await fetch('http://127.0.0.1:3001/api/chat', {
+      const response = await fetch('https://watsonserver.onrender.com/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
